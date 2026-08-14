@@ -2,6 +2,7 @@ services:
   - type: web
     name: contas-a-pagar-web
     runtime: python
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: sh start.sh
     healthCheckPath: /healthz
