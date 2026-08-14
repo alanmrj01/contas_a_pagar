@@ -1,0 +1,27 @@
+CONTAS A PAGAR WEB 2.0.2.0 - VALIDACAO DA MIGRACAO
+====================================================
+
+Base de referencia: ContasAPagar_2.0.2_EDICAO_CORPORATE_TI_BUILD_CORRIGIDO
+
+Escopo protegido e preservado:
+- leitura e normalizacao;
+- deteccao de layouts;
+- separacao PREVISTO/REALIZADO;
+- classificacao pela BASE DADOS;
+- reconciliacao;
+- metricas e agregacoes;
+- Excel e PDF;
+- template HTML final do relatorio.
+
+Mudanca arquitetural: somente a interface/orquestracao foi migrada de PySide6 para navegador + FastAPI.
+
+Ao gerar, a aba atual navega para o index.html produzido pelo mesmo app.services.report_generator.generate_report da versao desktop.
+
+Validacoes executadas:
+- compileall Python: OK
+- sintaxe JavaScript: OK
+- pytest: 43/43 aprovados
+- ponta a ponta com planilha de amostra: OK
+- paridade SHA-256 dos arquivos criticos: OK
+
+Observacao: em hospedagem externa, os arquivos precisam ser enviados ao servidor. Os brutos sao removidos apos a validacao. Para dados corporativos, use infraestrutura aprovada pela organizacao.

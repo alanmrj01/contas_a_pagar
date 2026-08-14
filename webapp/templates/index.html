@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Contas a Pagar — Previsto x Realizado</title>
+  <link rel="icon" href="/resources/contas_a_pagar_logo.png" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <section class="titles">
+        <div class="eyebrow">CONTAS A PAGAR&nbsp;&nbsp;•&nbsp;&nbsp;AUTOMAÇÃO DE RELATÓRIO</div>
+        <h1>Previsto x Realizado</h1>
+        <p>Fluxo guiado em 3 etapas. A BASE DADOS permanece independente e pode ser consultada ou atualizada pelo botão no canto superior direito.</p>
+      </section>
+      <button id="baseBtn" class="btn" type="button">Base de Dados</button>
+    </header>
+
+    <div id="baseInfo" class="base-info">Carregando BASE DADOS...</div>
+
+    <section class="steps-row" aria-label="Fluxo operacional">
+      <article class="step-card" id="step1">
+        <div class="step-head">
+          <span class="step-number">1</span>
+          <h2>Arraste seu arquivo financeiro aqui</h2>
+        </div>
+        <p class="step-help">Adicione um ou mais arquivos financeiros. Os arquivos originais são apenas lidos e nunca são alterados pela automação.</p>
+
+        <button class="drop-area" id="dropArea" type="button">
+          <strong>Solte o arquivo nesta área</strong>
+          <span>Ou use Adicionar arquivo • PREVISTO/REALIZADO separados ou consolidado • .xlsx • .xls • .xlsm • .xlsb</span>
+        </button>
+        <input id="fileInput" type="file" multiple accept=".xlsx,.xls,.xlsm,.xlsb" hidden />
+
+        <div id="fileList" class="file-list" aria-label="Arquivos selecionados">
+          <div class="file-empty">Nenhum arquivo adicionado.</div>
+        </div>
+        <div class="button-row">
+          <button id="pickBtn" class="btn" type="button">Adicionar arquivo</button>
+          <button id="removeBtn" class="btn" type="button" disabled>Remover selecionado</button>
+          <button id="clearBtn" class="btn" type="button" disabled>Limpar arquivos</button>
+        </div>
+      </article>
+
+      <article class="step-card disabled-card" id="step2">
+        <div class="step-head">
+          <span class="step-number">2</span>
+          <h2>Validar arquivo</h2>
+          <button id="validateBtn" class="btn action-btn" type="button" disabled>Validar arquivo</button>
+        </div>
+        <p class="step-help">Disponível após a etapa 1. Valide antes de gerar o relatório para conferir estrutura, período, valores, datas e classificações sem modificar os dados de origem.</p>
+
+        <div id="spinner" class="spinner" aria-hidden="true">◜</div>
+
+        <section class="analysis-panel">
+          <div class="analysis-head">
+            <h3>Análise dos dados</h3>
+            <span id="analysisBadge" class="analysis-badge">AGUARDANDO</span>
+          </div>
+          <p id="analysisIntro" class="analysis-intro">Após a importação, clique em Validar arquivo. Aqui será mostrado o que foi reconhecido, o período encontrado e qualquer ponto que mereça atenção.</p>
+          <div id="analysisDetails" class="analysis-details">
+            <div class="analysis-placeholder">O resumo organizado da validação aparecerá aqui.</div>
+          </div>
+        </section>
+      </article>
+
+      <article class="step-card disabled-card" id="step3">
+        <div class="step-head">
+          <span class="step-number">3</span>
+          <h2>Gerar relatório</h2>
+        </div>
+        <p class="step-help">Disponível após a validação. Revise a análise da etapa 2 antes de gerar. Depois da geração, o relatório interativo e o PDF poderão ser abertos novamente por aqui.</p>
+        <div class="button-row output-row">
+          <button id="generateBtn" class="btn action-btn" type="button" disabled>Gerar relatório</button>
+          <span class="grow"></span>
+          <button id="openReportBtn" class="btn" type="button" disabled>Abrir último relatório</button>
+          <button id="openPdfBtn" class="btn" type="button" disabled>Abrir PDF</button>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <dialog id="filesDialog" class="modal small-modal">
+    <form method="dialog" class="modal-card">
+      <div class="modal-head"><h2>Arquivos adicionados</h2><button class="icon-close" value="close" aria-label="Fechar">×</button></div>
+      <p id="filesDialogText"></p>
+      <div class="modal-actions">
+        <button id="dialogMore" type="button" class="btn">Importar mais</button>
+        <button id="dialogValidate" type="button" class="btn ready">Validar agora</button>
+        <button value="close" class="btn">Continuar depois</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="baseDialog" class="modal base-modal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div><h2>Base de Dados — Contas a Pagar</h2><p id="baseDialogInfo">Carregando...</p></div>
+        <button id="baseClose" type="button" class="icon-close" aria-label="Fechar">×</button>
+      </div>
+      <div class="modal-actions base-actions">
+        <a class="btn link-btn" href="/api/base/export">Exportar Base em Excel</a>
+        <button id="importBaseBtn" type="button" class="btn">Importar nova Base</button>
+        <input id="baseFileInput" type="file" accept=".xlsx,.xls,.xlsm,.xlsb" hidden />
+      </div>
+      <div class="base-table-wrap">
+        <table class="base-table">
+          <thead><tr><th>Cód Fornecedor</th><th>Fornecedor</th><th>Fluxo JMM</th><th>Categoria</th></tr></thead>
+          <tbody id="baseTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="confirmBaseDialog" class="modal small-modal">
+    <form method="dialog" class="modal-card">
+      <div class="modal-head"><h2>Substituir Base de Dados</h2><button class="icon-close" value="no" aria-label="Fechar">×</button></div>
+      <p>A nova base passará a ser usada nas próximas validações deste navegador. A base anterior será preservada se a nova não for válida.</p>
+      <p>Deseja continuar?</p>
+      <div class="modal-actions">
+        <button id="confirmBaseYes" type="button" class="btn ready">Sim</button>
+        <button value="no" class="btn">Não</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="messageDialog" class="modal small-modal">
+    <form method="dialog" class="modal-card">
+      <div class="modal-head"><h2 id="messageTitle">Aviso</h2><button class="icon-close" value="close" aria-label="Fechar">×</button></div>
+      <p id="messageText"></p>
+      <div class="modal-actions"><button value="close" class="btn">OK</button></div>
+    </form>
+  </dialog>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

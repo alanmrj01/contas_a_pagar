@@ -1,0 +1,6 @@
+fastapi==0.128.2
+uvicorn[standard]==0.48.0
+python-multipart==0.0.29
+python-calamine==0.5.3
+XlsxWriter==3.2.9
+reportlab==4.4.9

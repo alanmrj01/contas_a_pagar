@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: contas-a-pagar-web
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: sh start.sh
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.1

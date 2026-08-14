@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>Contas a Pagar — Previsto x Realizado</title>
+<style>
+:root{--bg:#132d45;--surface:#1b3b58;--surface2:#234865;--accent:#65a9d5;--accent2:#8ed1ff;--text:#f4f8fb;--muted:#b9cad7;--good:#61c79a;--warn:#e5b45d;--bad:#ef7d80;--line:#315570;--ink:#0f2536}
+*{box-sizing:border-box}html,body{margin:0;background:linear-gradient(160deg,#112b42,#183957 55%,#15324b);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif}body{min-height:100vh}.wrap{max-width:1480px;margin:auto;padding:28px}.top{display:flex;justify-content:space-between;gap:20px;align-items:flex-end;margin-bottom:18px}.eyebrow{font-size:12px;letter-spacing:.14em;color:var(--accent2);font-weight:800}.top h1{margin:6px 0 0;font-size:32px}.period{padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:#ffffff08;color:var(--muted);font-weight:700}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}.download{display:inline-flex;align-items:center;gap:7px;text-decoration:none;color:var(--text);background:#203f5e;border:1px solid #3b617c;border-radius:10px;padding:9px 12px;font-weight:700;font-size:12px}.download:hover{background:#294b6a}.download.primary{background:#3b8d69;border-color:#5bb28c}.filters{display:grid;grid-template-columns:repeat(6,minmax(135px,1fr));gap:10px;padding:14px;border:1px solid var(--line);border-radius:16px;background:#0d2234aa;position:sticky;top:8px;z-index:10;backdrop-filter:blur(12px)}select,input{width:100%;background:var(--surface);border:1px solid var(--line);color:var(--text);padding:10px 11px;border-radius:10px;outline:none}.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin:18px 0}.kpi{position:relative;background:linear-gradient(160deg,var(--surface),#173650);border:1px solid var(--line);border-radius:16px;padding:16px;min-height:116px}.kpi .label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}.kpi .value{font-size:25px;font-weight:800;margin-top:8px}.kpi .sub{color:var(--muted);font-size:12px;margin-top:5px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{position:relative;background:linear-gradient(165deg,var(--surface),#17364f);border:1px solid var(--line);border-radius:18px;padding:18px;margin-bottom:14px;box-shadow:0 14px 50px #06152422}.cardHead{display:flex;align-items:center;gap:8px}.card h2{font-size:16px;margin:0 0 4px}.card .hint{font-size:12px;color:var(--muted);margin-bottom:12px}.chart{height:330px;width:100%}.chart svg{width:100%;height:100%;overflow:visible}.grid{stroke:#2d506b;stroke-width:1;opacity:.55}.lab{fill:#c9dbe7;font-size:12.5px}.smallLab{fill:#aebfcb;font-size:11px}.barP{fill:#65a9d5}.barR{fill:#9cd8ff}.barPos{fill:#61c79a}.barNeg{fill:#ef7d80}.lineP{stroke:#65a9d5;stroke-width:3;fill:none}.lineR{stroke:#d4efff;stroke-width:3;fill:none}.legend{display:flex;gap:14px;color:var(--muted);font-size:12px;margin-top:6px}.legend i{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:5px}.summary{font-size:14px;line-height:1.65;color:#dce8f0}.tableWrap{overflow:auto;max-height:540px;border:1px solid var(--line);border-radius:12px}table{width:100%;border-collapse:collapse;min-width:900px}th,td{padding:10px 12px;border-bottom:1px solid #315570;text-align:left;font-size:12px}th{position:sticky;top:0;background:#183955;color:#c9dbe7;z-index:2}td.num{text-align:right;font-variant-numeric:tabular-nums}.positive{color:var(--bad);font-weight:700}.negative{color:var(--good);font-weight:700}.footer{color:#88a5b8;font-size:11px;padding:18px 0}.empty{color:var(--muted);display:flex;align-items:center;justify-content:center;height:100%}.info{border:1px solid #5a7b94;background:#17364f;color:#bfe0f5;width:19px;height:19px;border-radius:50%;padding:0;font-size:11px;font-weight:800;cursor:help;position:relative;line-height:17px}.info:hover:after,.info:focus:after{content:attr(data-tip);position:absolute;z-index:50;width:290px;left:25px;top:-6px;background:#081b2a;color:#eaf5fb;border:1px solid #496b84;border-radius:10px;padding:10px;text-align:left;font-weight:400;line-height:1.4;box-shadow:0 10px 35px #0008}.kpi .info{position:absolute;right:10px;top:10px}.warnings{margin:14px 0}.warningBox{background:#e5b45d12;border:1px solid #e5b45d55;border-radius:13px;margin:8px 0;overflow:hidden}.warningBox.infoLevel{background:#65a9d512;border-color:#65a9d555}.warningBox summary{cursor:pointer;padding:11px 13px;color:#ffe3a4;font-size:13px;font-weight:700}.warningBox.infoLevel summary{color:#ccecff}.warningBody{padding:0 13px 13px;color:#d7e2e8;font-size:12px}.warningBody p{margin:0 0 9px;line-height:1.5}.warningDetails{max-height:310px;overflow:auto;border:1px solid #ffffff16;border-radius:9px}.warningDetails table{min-width:1000px}.warnSug{color:#ffd27c}.pill{display:inline-flex;align-items:center;padding:3px 7px;border-radius:999px;background:#ffffff0e;border:1px solid #ffffff18;font-size:10px;color:#dce8f0}.source{color:#9fb6c6;font-size:11px}.donutLegend{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-top:-4px;color:#c5d5df;font-size:12px}.donutLegend i{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:5px}.calcNote{margin-top:10px;color:#9db3c2;font-size:11px;line-height:1.45}.printOnly{display:none}
+@media(max-width:1050px){.filters{grid-template-columns:1fr 1fr}.kpis{grid-template-columns:1fr 1fr 1fr}.grid2{grid-template-columns:1fr}}@media(max-width:650px){.wrap{padding:14px}.top{display:block}.period{display:inline-block;margin-top:12px}.filters{position:static;grid-template-columns:1fr}.kpis{grid-template-columns:1fr 1fr}.kpi .value{font-size:20px}.grid2{grid-template-columns:1fr}.chart{height:300px}.info:hover:after,.info:focus:after{left:auto;right:0;top:25px;width:250px}}
+@media print{html,body{background:#fff;color:#102739}.wrap{max-width:none;padding:0}.toolbar,.filters,.warnings,.info{display:none!important}.card,.kpi{box-shadow:none;background:#fff;color:#102739;border-color:#cad7df;break-inside:avoid}.card h2,.kpi .value{color:#102739}.kpi .label,.kpi .sub,.hint,.summary,.footer{color:#536b7a}.lab{fill:#344d5d}.grid{stroke:#dbe4e9}.top{margin-top:0}.eyebrow{color:#356c91}.period{color:#536b7a;border-color:#cad7df}.printOnly{display:block}@page{size:A4 portrait;margin:10mm}}
+</style>
+<style id="polimento-1-1-1">
+.download{position:relative;overflow:hidden;isolation:isolate;box-shadow:0 8px 20px rgba(3,18,29,.18);transition:transform .22s ease,background .22s ease,border-color .22s ease,box-shadow .22s ease,color .22s ease}.download::before{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(110deg,transparent 10%,rgba(255,255,255,.10) 48%,transparent 78%);transform:translateX(-120%);transition:transform .45s ease}.download:hover{transform:translateY(-2px);background:#2d516f;border-color:#6d9bbb;box-shadow:0 12px 28px rgba(3,18,29,.30)}.download:hover::before{transform:translateX(120%)}.download:active{transform:translateY(0) scale(.985);box-shadow:0 5px 12px rgba(3,18,29,.24)}.download.primary{background:linear-gradient(135deg,#3d9f78,#328a68);border-color:#69c49d}.download.primary:hover{background:linear-gradient(135deg,#4caf85,#399875);border-color:#91dbbb}
+select,input{transition:border-color .2s ease,box-shadow .2s ease,background .2s ease}select:hover,input:hover{border-color:#4f7896;background:#21425f}select:focus,input:focus{border-color:#76afd3;box-shadow:0 0 0 3px rgba(101,169,213,.13)}
+.card,.kpi,.warningBox{animation:reportRise .52s cubic-bezier(.2,.72,.26,1) both;transition:transform .24s ease,border-color .24s ease,box-shadow .24s ease}.card:hover{transform:translateY(-2px);border-color:#416987;box-shadow:0 18px 54px rgba(6,21,36,.25)}.kpi:hover{transform:translateY(-2px);border-color:#416987;box-shadow:0 12px 30px rgba(6,21,36,.22)}.kpi:nth-child(2),.grid2 .card:nth-child(2){animation-delay:.04s}.kpi:nth-child(3){animation-delay:.08s}.kpi:nth-child(4){animation-delay:.12s}.kpi:nth-child(5){animation-delay:.16s}.kpi:nth-child(6){animation-delay:.20s}.info{transition:transform .18s ease,border-color .18s ease,background .18s ease}.info:hover,.info:focus{transform:scale(1.08);border-color:#83bce0;background:#214a67}
+.chart{height:350px}.chartTall{height:370px}.chartWaterfall{height:390px}.chart svg>*{animation:plotReveal .44s ease both}.axisLab{fill:#94adbe;font-size:11px;font-variant-numeric:tabular-nums}.xLab{fill:#c2d3de;font-size:11.5px;font-weight:600}.monthTick{font-size:12px;letter-spacing:.04em}.valueLab{fill:#dce8ef;font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums}.valueExact{font-size:9px}.lineGlow{stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 2px 3px rgba(2,18,29,.28))}.legend{align-items:center;flex-wrap:wrap}.legendPlanned{background:#8EC5E8!important;opacity:.5;border:1px solid #bfe3f8}.legendActual{background:#8EC5E8!important}.legendNote{color:#87a5b9;font-size:11px}.donutLegend span{display:inline-flex;align-items:center;gap:2px;padding:5px 8px;border:1px solid #ffffff12;border-radius:999px;background:#ffffff07}.donutLegend b{color:#eef7fb}
+.cardWide{width:100%}.chartCategoryWide{height:455px}.monthlyChart{max-height:760px;overflow:auto;padding:4px 4px 8px;scrollbar-color:#527996 #17364f;scrollbar-width:thin}.monthBlock{padding:14px 0 18px;border-bottom:1px solid #315570}.monthBlock:last-child{border-bottom:0}.monthHead{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:0 0 10px}.monthTitle{display:inline-flex;align-items:center;gap:8px;color:#eaf5fb;font-size:13px;font-weight:850;letter-spacing:.05em}.monthTitle::before{content:"";width:7px;height:7px;border-radius:50%;background:#8ed1ff;box-shadow:0 0 0 4px #8ed1ff18}.monthCount{color:#88a5b8;font-size:10.5px}.monthSupplierRow{display:grid;grid-template-columns:minmax(180px,270px) minmax(0,1fr);gap:14px;padding:10px 6px;border-radius:10px}.monthSupplierRow:nth-child(even){background:#ffffff03}.monthSupplierMeta{min-width:0}.monthSupplierMeta strong{display:block;color:#e7f0f5;font-size:11.5px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.monthSupplierMeta span{display:inline-block;margin-top:4px;padding:3px 7px;border-radius:999px;background:#ffffff0a;border:1px solid #ffffff12;color:#a9c0cf;font-size:9.8px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.monthBars{display:grid;grid-template-columns:1fr 1fr;gap:10px}.monthMetric{min-width:0}.monthMetricHead{display:flex;justify-content:space-between;gap:8px;align-items:baseline;margin-bottom:5px;font-size:9.8px}.monthMetricHead span{color:#9eb4c3;font-weight:700}.monthMetricHead b{color:#edf6fb;font-size:10.3px;font-variant-numeric:tabular-nums;white-space:nowrap}.monthTrack{height:12px;border-radius:999px;background:#0d2639;overflow:hidden;border:1px solid #315570}.monthFill{height:100%;min-width:2px;border-radius:999px}.monthFillP{background:linear-gradient(90deg,#79b9df,#a9d6ef)}.monthFillR{background:linear-gradient(90deg,#f0ad9b,#f4c2b4)}
+@keyframes reportRise{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}@keyframes plotReveal{from{opacity:0}to{opacity:1}}
+@media(max-width:650px){.chart,.chartTall,.chartWaterfall{height:330px}.chartCategoryWide{height:430px}.monthSupplierRow{grid-template-columns:1fr;gap:8px;padding:12px 4px}.monthBars{gap:7px}.monthMetricHead{display:grid;gap:2px}.monthMetricHead b{font-size:9.7px}.monthlyChart{max-height:680px}.card:hover,.kpi:hover{transform:none}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+</style>
+
+<style id="polimento-1-1-3">
+/* Base visual 1.1.3 — diferenciação Previsto x Realizado e mini-cards mensais */
+.categoryLegend{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin:10px 0 2px;padding:10px 12px;border:1px solid #ffffff12;border-radius:12px;background:#0d22342f}
+.categoryLegend span{display:inline-flex;align-items:center;gap:7px;color:#d8e6ee;font-size:12px;font-weight:750}
+.categoryLegend i{width:22px;height:12px;border-radius:3px;display:inline-block}
+.categoryLegend .plannedKey{background:rgba(142,197,232,.14);border:2px solid #8EC5E8}
+.categoryLegend .actualKey{background:#8EC5E8;border:2px solid #8EC5E8}
+.categoryLegend .legendNote{color:#91aabd;font-weight:500}
+.pairMark{fill:#d8e7ef;font-size:10px;font-weight:900;letter-spacing:.08em}
+
+.chartTimelineWide{height:455px}
+.timelineLegend{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-top:8px;color:#b9cad7;font-size:12px}
+.timelineLegend span{display:inline-flex;align-items:center;gap:7px}
+.timelineLegend i{width:24px;height:4px;border-radius:999px;display:inline-block}
+.timelineLegend .timelineP{background:#65a9d5}
+.timelineLegend .timelineR{background:#d4efff;border:1px solid #7eb3d1}
+.timelineValueP{fill:#9cd8ff;font-size:9.5px;font-weight:800;font-variant-numeric:tabular-nums}
+.timelineValueR{fill:#f1b6a8;font-size:9.5px;font-weight:800;font-variant-numeric:tabular-nums}
+
+.monthlyChart{max-height:780px;overflow:auto;padding:2px 6px 10px 2px;scrollbar-color:#527996 #17364f;scrollbar-width:thin}
+.monthlyChart::-webkit-scrollbar{width:9px}
+.monthlyChart::-webkit-scrollbar-track{background:#17364f;border-radius:999px}
+.monthlyChart::-webkit-scrollbar-thumb{background:#527996;border-radius:999px;border:2px solid #17364f}
+.filterSpotlight{margin:0 0 16px;padding:14px;border:1px solid #65a9d54a;border-radius:14px;background:linear-gradient(145deg,#65a9d512,#ffffff04)}
+.filterSpotlight__head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px}
+.filterSpotlight__head strong{color:#dff2ff;font-size:12px}
+.filterSpotlight__head span{color:#90aabd;font-size:10px}
+.monthBlock{padding:14px 0 18px;border-bottom:1px solid #315570}
+.monthBlock:last-child{border-bottom:0}
+.monthHead{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:0 0 11px}
+.monthTitle{display:inline-flex;align-items:center;gap:8px;color:#eaf5fb;font-size:13px;font-weight:850;letter-spacing:.05em}
+.monthTitle::before{content:"";width:7px;height:7px;border-radius:50%;background:#8ed1ff;box-shadow:0 0 0 4px #8ed1ff18}
+.monthCount{color:#88a5b8;font-size:10.5px}
+.monthCardsGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.monthMiniCard{--supplier-color:#8ed1ff;position:relative;min-width:0;padding:13px 13px 12px;border:1px solid #ffffff12;border-radius:14px;background:linear-gradient(160deg,#21445f,#193952);box-shadow:0 8px 20px rgba(2,18,29,.15);overflow:hidden;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
+.monthMiniCard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--supplier-color)}
+.monthMiniCard:hover{transform:translateY(-2px);border-color:#ffffff24;box-shadow:0 12px 28px rgba(2,18,29,.24)}
+.monthMiniCard--focus{border-color:#65a9d56b;background:linear-gradient(160deg,#244e6d,#1b405d)}
+.monthMiniCard__head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:7px}
+.monthMiniCard__supplier{min-width:0;color:var(--supplier-color);font-size:11.5px;font-weight:900;line-height:1.3;overflow:hidden;text-overflow:ellipsis}
+.monthMiniCard__month{flex:0 0 auto;padding:3px 6px;border-radius:999px;background:#ffffff0b;border:1px solid #ffffff12;color:#d8e6ee;font-size:9px;font-weight:850}
+.monthMetric{min-width:0;margin-top:7px}
+.monthMetric:first-of-type{margin-top:0}
+.monthMetricHead{display:flex;justify-content:space-between;gap:8px;align-items:baseline;color:#a9c0cf;font-size:9.5px}
+.monthMetricHead b{color:#f4f8fb;font-size:10.4px;font-variant-numeric:tabular-nums}
+.monthTrack{height:6px;margin-top:4px;border-radius:999px;background:#102a3f;overflow:hidden;border:1px solid #2d526e}
+.monthFill{height:100%;border-radius:999px}
+.monthFillP{background:#76b7dd}
+.monthFillR{background:#f1b6a8}
+.monthMiniCard__delta{display:flex;justify-content:space-between;gap:8px;margin-top:9px;padding-top:8px;border-top:1px solid #ffffff0d;color:#94adbe;font-size:9.4px}
+.monthMiniCard__delta b{font-variant-numeric:tabular-nums}
+.monthMiniCard__delta b.deltaPositive{color:#61c79a}.monthMiniCard__delta b.deltaNegative{color:#ef7d80}
+.monthMiniCard__delta b.positive{color:#61c79a}
+.monthMiniCard__delta b.negative{color:#ef7d80}
+
+@media(max-width:1050px){.monthCardsGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){
+  .chartCategoryWide,.chartTimelineWide{height:390px}
+  .categoryLegend,.timelineLegend{gap:10px}
+  .categoryLegend .legendNote{width:100%;font-size:10.5px}
+  .monthCardsGrid{grid-template-columns:1fr}
+  .monthlyChart{max-height:720px;padding-right:3px}
+  .monthMiniCard{padding:12px}
+  .filterSpotlight__head{align-items:flex-start;flex-direction:column}
+}
+@media print{
+  .monthMiniCard,.filterSpotlight{background:#fff;color:#173047;border-color:#d6e1e8;box-shadow:none}
+  .monthMetricHead b{color:#173047}.monthMetricHead,.monthMiniCard__delta{color:#607789}
+  .monthTrack{background:#eef3f6;border-color:#d6e1e8}
+}
+</style>
+
+
+<style id="cirurgico-1-1-4">
+/* 1.1.4 — somente refinamentos solicitados no comparativo mensal */
+.monthlyChart{max-height:900px;padding:4px 8px 12px 3px}
+.monthBlock{padding:18px 0 22px}
+.monthHead{align-items:flex-start;gap:18px;margin-bottom:14px}
+.monthHeadMain{display:flex;flex-direction:column;gap:5px;min-width:210px}
+.monthTitle{font-size:15px}
+.monthCount{font-size:11.5px}
+.monthOverview{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:9px;flex:1;max-width:720px}
+.monthOverview>span{display:grid;grid-template-columns:1fr auto;gap:3px 10px;padding:9px 11px;border:1px solid #ffffff12;border-radius:11px;background:#102b40}
+.monthOverview small{color:#9eb5c5;font-size:10.5px;font-weight:750}
+.monthOverview b{color:#f4f8fb;font-size:12px;font-variant-numeric:tabular-nums}
+.monthOverview em{grid-column:1/-1;color:#8fa8b9;font-size:10px;font-style:normal}
+.monthCardsGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.monthMiniCard{padding:16px 16px 15px;min-height:265px;border-radius:15px}
+.monthMiniCard__head{margin-bottom:9px}
+.monthMiniCard__supplier{font-size:13px;line-height:1.35}
+.monthMiniCard__month{font-size:10px;padding:4px 7px}
+.monthMiniCard__classification{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:12px}
+.monthMiniCard__classification>span{min-width:0;padding:6px 8px;border:1px solid #ffffff12;border-radius:9px;background:#ffffff06;color:#a9c0cf;font-size:10.5px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.monthMiniCard__classification b{color:#dce9f1;font-weight:800}
+.monthMetric{margin-top:9px}
+.monthMetricHead{font-size:11px}
+.monthMetricHead b{font-size:12.5px}
+.monthTrack{height:8px;margin-top:5px}
+.monthMiniCard__delta{font-size:10.8px;margin-top:10px;padding-top:9px}
+.monthMiniCard__delta b{font-size:11.5px}
+.monthComparison{margin-top:10px;padding:9px 10px;border-radius:10px;background:#0d293d;border:1px solid #ffffff10}
+.monthComparison__title{color:#c6d9e5;font-size:10.5px;font-weight:800;margin-bottom:7px}
+.monthComparison__grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.monthComparison__grid>span{display:grid;grid-template-columns:1fr auto;gap:2px 6px;align-items:baseline}
+.monthComparison__grid small{color:#8fa8b9;font-size:9.8px}
+.monthComparison__grid b{font-size:10.8px;font-variant-numeric:tabular-nums}
+.monthComparison__grid em{grid-column:1/-1;color:#8fa8b9;font-size:9.5px;font-style:normal}
+.monthComparison--empty{color:#8fa8b9;font-size:10px}
+.momUp{color:#efb07f!important}.momDown{color:#76d0a6!important}
+@media(max-width:920px){.monthCardsGrid{grid-template-columns:1fr}.monthHead{flex-direction:column}.monthOverview{width:100%;max-width:none}.monthMiniCard{min-height:0}}
+@media(max-width:650px){.monthOverview{grid-template-columns:1fr}.monthMiniCard__classification{grid-template-columns:1fr}.monthMiniCard__supplier{font-size:12.5px}}
+@media print{.monthOverview>span,.monthComparison,.monthMiniCard__classification>span{background:#fff;border-color:#d6e1e8}.monthMiniCard__classification>span,.monthComparison__title,.monthComparison--empty{color:#607789}.monthMiniCard__classification b,.monthOverview b{color:#173047}}
+</style>
+
+
+<style id="cirurgico-1-1-5">
+/* 1.1.5 — filtros múltiplos, legibilidade, tooltips e comparativo mensal */
+.filters{grid-template-columns:repeat(6,minmax(135px,1fr));align-items:stretch;z-index:40}
+.multiFilter{position:relative;min-width:0}
+.multiFilter>summary{height:100%;min-height:42px;display:flex;flex-direction:column;justify-content:center;gap:2px;padding:8px 34px 8px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface);cursor:pointer;list-style:none;position:relative;transition:border-color .2s ease,background .2s ease,box-shadow .2s ease}
+.multiFilter>summary::-webkit-details-marker{display:none}.multiFilter>summary::after{content:"▾";position:absolute;right:11px;top:50%;transform:translateY(-50%);color:#9fc1d7;font-size:12px}
+.multiFilter[open]>summary{border-color:#76afd3;background:#21425f;box-shadow:0 0 0 3px rgba(101,169,213,.11)}
+.multiFilterName{font-size:9.5px;letter-spacing:.055em;text-transform:uppercase;color:#8fa9ba;font-weight:800}.multiFilterValue{font-size:11.5px;color:#edf6fb;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.multiFilterMenu{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:5000;min-width:245px;max-height:310px;overflow:auto;padding:7px;border:1px solid #496b84;border-radius:11px;background:#0c2233;box-shadow:0 18px 46px rgba(0,0,0,.42)}
+.multiFilterMenu label{display:flex;align-items:flex-start;gap:8px;padding:7px 8px;border-radius:8px;color:#d9e8f0;font-size:11px;line-height:1.35;cursor:pointer}.multiFilterMenu label:hover{background:#ffffff0b}.multiFilterMenu input{width:auto;margin:1px 0 0;accent-color:#65a9d5;flex:0 0 auto}
+.emissionFilterMenu{min-width:270px}.emissionModeToggle{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding-bottom:6px;margin-bottom:5px;border-bottom:1px solid #ffffff14}.emissionModeToggle label{align-items:center;justify-content:center;padding:7px 6px;border:1px solid #ffffff12;background:#ffffff05}.emissionModeToggle input{margin:0}.emissionFilterHint{padding:2px 8px 6px;color:#90aabd;font-size:9.5px;line-height:1.3}.emissionOptions{max-height:220px;overflow:auto}.emissionOptions:empty::after{content:"Nenhuma data de Emissão disponível";display:block;padding:10px 8px;color:#90aabd;font-size:10.5px}
+.filterSearch{min-height:42px}.clearFilters{min-height:42px;border:1px solid #49708b;background:#173a55;color:#edf6fb;border-radius:10px;padding:8px 12px;font-weight:800;font-size:11.5px;cursor:pointer;transition:transform .18s ease,background .18s ease,border-color .18s ease,box-shadow .18s ease}.clearFilters:hover{transform:translateY(-1px);background:#244d69;border-color:#73a9cb;box-shadow:0 8px 22px rgba(2,18,29,.25)}
+
+/* Números não podem quebrar ou escapar do card. O JS ainda reduz dinamicamente o KPI quando necessário. */
+.kpi{min-width:0;overflow:visible}.kpi .value{white-space:nowrap;max-width:100%;font-size:clamp(16px,1.72vw,25px);line-height:1.12;letter-spacing:-.015em;font-variant-numeric:tabular-nums}
+.monthMetricHead b,.monthOverview b,.monthComparison__grid b,.monthMiniCard__delta b,td.num{white-space:nowrap;font-variant-numeric:tabular-nums}
+
+/* Tooltip global fora do stacking context dos cards. */
+.info:hover:after,.info:focus:after{display:none!important}.globalInfoTip{display:none;position:fixed;z-index:100000;max-width:min(340px,calc(100vw - 24px));background:#081b2a;color:#eaf5fb;border:1px solid #5a7b94;border-radius:11px;padding:11px 12px;font-size:11.5px;line-height:1.45;font-weight:450;box-shadow:0 16px 46px rgba(0,0,0,.55);pointer-events:none}
+
+/* Seção de avisos explicitamente identificada. */
+.warningsSection{margin:14px 0}.warningsHeader{display:flex;align-items:baseline;gap:10px;margin:0 2px 7px}.warningsHeader h2{margin:0;color:#eef7fb;font-size:15px}.warningsHeader span{color:#8fa8b9;font-size:10.5px}
+
+/* Comparativo mensal: mais respiro, sombra real e área vertical para até três meses. */
+.monthlyCardHead{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}.monthlyCardTitle{display:flex;align-items:center;gap:8px;min-width:0}.monthlyCardTitle h2{margin:0}
+.monthlyChart{max-height:2400px;padding:7px 12px 16px 7px}
+.monthCardsGrid{gap:17px}
+.monthMiniCard{box-shadow:0 15px 34px rgba(1,12,22,.32),0 2px 6px rgba(0,0,0,.18);border-color:#ffffff18;transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease}
+.monthMiniCard:hover{transform:translateY(-4px);border-color:#73a9cb66;box-shadow:0 25px 50px rgba(1,12,22,.46),0 7px 16px rgba(0,0,0,.22)}
+.monthComparison__title{font-size:12px}.monthComparison__grid small{font-size:11px;font-weight:750}.monthComparison__grid em{font-size:10.8px;line-height:1.3}.monthComparison--empty{font-size:11px;line-height:1.45}
+
+/* Filtro de mês exclusivo da visão mensal. */
+.monthFilter{position:relative;flex:0 0 auto}.monthFilter>summary{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:7px 10px;border:1px solid #456c87;border-radius:9px;background:#173a55;color:#eaf5fb;font-size:10.5px;font-weight:800;cursor:pointer;list-style:none;white-space:nowrap}.monthFilter>summary::-webkit-details-marker{display:none}.monthFilter>summary::after{content:"▾";color:#9fc1d7}.monthFilter[open]>summary{border-color:#76afd3;background:#214763}.monthFilterLabel{color:#8ed1ff;font-size:9.5px}.monthFilterMenu{position:absolute;right:0;top:calc(100% + 6px);z-index:5000;width:220px;max-height:300px;overflow:auto;padding:8px;border:1px solid #496b84;border-radius:11px;background:#0c2233;box-shadow:0 18px 46px rgba(0,0,0,.42)}.monthFilterMenu label{display:flex;align-items:center;gap:8px;padding:7px;border-radius:8px;color:#dce9f1;font-size:11px;cursor:pointer}.monthFilterMenu label:hover{background:#ffffff0b}.monthFilterMenu input{width:auto;accent-color:#65a9d5}.monthFilterClear{width:100%;margin-top:5px;border:1px solid #ffffff18;border-radius:8px;background:#ffffff07;color:#cce3f1;padding:7px;font-size:10.5px;font-weight:750;cursor:pointer}.monthFilterClear:hover{background:#ffffff10}
+
+@media(max-width:1180px){.filters{grid-template-columns:repeat(3,minmax(160px,1fr))}}
+@media(max-width:720px){.filters{grid-template-columns:1fr}.monthlyCardHead{flex-direction:column}.monthFilter{width:100%}.monthFilter>summary{width:100%;justify-content:space-between}.monthFilterMenu{left:0;right:auto;width:min(100%,260px)}.monthlyChart{max-height:1050px}.monthCardsGrid{gap:13px}}
+@media print{.clearFilters,.monthFilter,.globalInfoTip{display:none!important}.warningsHeader span{display:none}}
+
+/* PDF/Impressão: A4 retrato, sem áreas roláveis e sem recortes. */
+.filterPrintSummary{display:none}
+@media print{
+  @page{size:A4 portrait;margin:9mm}
+  html,body{width:auto!important;min-width:0!important;background:#fff!important;color:#102739!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{font-size:8.5pt}
+  .wrap{max-width:none!important;width:auto!important;padding:0!important;margin:0!important}
+  .toolbar,.filters,.info,.globalInfoTip,.monthFilter{display:none!important}
+  .top{margin:0 0 4mm!important;align-items:flex-start!important}.top h1{font-size:20pt!important}.eyebrow{font-size:7.5pt!important}.period{font-size:7.5pt!important;padding:2mm 3mm!important}
+  .filterPrintSummary{display:block!important;margin:0 0 4mm;padding:2.5mm 3mm;border:1px solid #cad7df;border-radius:2mm;color:#536b7a;background:#f7fafc;font-size:7.5pt;line-height:1.35}
+  .kpis{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:2.5mm!important;margin:4mm 0!important}
+  .kpi{min-height:23mm!important;padding:3mm!important;border-radius:2.5mm!important;break-inside:avoid!important;page-break-inside:avoid!important;overflow:hidden!important}
+  .kpi .label{font-size:6.8pt!important}.kpi .value{font-size:11pt!important;line-height:1.05!important;letter-spacing:-.02em!important}.kpi .sub{font-size:6.6pt!important}
+  .card{margin:0 0 4mm!important;padding:3.5mm!important;border-radius:2.5mm!important;box-shadow:none!important;background:#fff!important;color:#102739!important;border-color:#cad7df!important;break-inside:avoid;page-break-inside:avoid}
+  .card.printSplit{break-inside:auto!important;page-break-inside:auto!important}
+  .card h2{font-size:10pt!important;color:#102739!important}.hint,.summary,.footer{color:#536b7a!important}.hint{font-size:6.8pt!important;margin-bottom:2mm!important}.summary{font-size:8pt!important;line-height:1.45!important}
+  .grid2{display:block!important}.grid2>.card{break-inside:avoid!important;page-break-inside:avoid!important}
+  .chart,.chartTall,.chartWaterfall,.chartCategoryWide,.chartTimelineWide{height:auto!important;min-height:0!important;max-height:92mm!important;overflow:visible!important}.chart svg{height:auto!important;max-height:92mm!important}
+  .monthlyChart,.tableWrap,.warningDetails{max-height:none!important;height:auto!important;overflow:visible!important;scrollbar-width:none!important;border-color:#cad7df!important}
+  .monthlyChart::-webkit-scrollbar,.tableWrap::-webkit-scrollbar,.warningDetails::-webkit-scrollbar{display:none!important}
+  .monthBlock{break-inside:auto!important;page-break-inside:auto!important;padding:3mm 0 4mm!important}
+  .monthHead{gap:3mm!important;margin-bottom:2.5mm!important}.monthTitle{font-size:8.5pt!important}.monthCount{font-size:6.5pt!important}
+  .monthOverview{grid-template-columns:1fr 1fr!important;gap:2mm!important}.monthOverview>span{padding:2mm!important;background:#fff!important;border-color:#d6e1e8!important}.monthOverview small{font-size:6.2pt!important}.monthOverview b{font-size:7.3pt!important}.monthOverview em{font-size:6.1pt!important}
+  .monthCardsGrid{grid-template-columns:1fr 1fr!important;gap:3mm!important}.monthMiniCard{min-height:0!important;padding:3mm!important;box-shadow:none!important;background:#fff!important;color:#173047!important;border-color:#d6e1e8!important;break-inside:avoid!important;page-break-inside:avoid!important}
+  .monthMiniCard__supplier{font-size:7.4pt!important}.monthMiniCard__month{font-size:5.8pt!important}.monthMiniCard__classification{gap:1.5mm!important;margin-bottom:2mm!important}.monthMiniCard__classification>span{font-size:6.1pt!important;padding:1.4mm 1.7mm!important;background:#fff!important;border-color:#d6e1e8!important;color:#607789!important}.monthMiniCard__classification b{color:#173047!important}
+  .monthMetric{margin-top:1.6mm!important}.monthMetricHead{font-size:6.4pt!important}.monthMetricHead b{font-size:6.8pt!important;color:#173047!important}.monthTrack{height:1.7mm!important}.monthMiniCard__delta{font-size:6.2pt!important;margin-top:1.8mm!important;padding-top:1.5mm!important}.monthMiniCard__delta b{font-size:6.6pt!important}
+  .monthComparison{margin-top:2mm!important;padding:2mm!important;background:#fff!important;border-color:#d6e1e8!important}.monthComparison__title{font-size:6.8pt!important;color:#526a7a!important}.monthComparison__grid small,.monthComparison__grid em{font-size:6.1pt!important}.monthComparison__grid b{font-size:6.6pt!important}.monthComparison--empty{font-size:6.2pt!important;color:#607789!important}
+  .warningsSection{display:block!important;margin:3mm 0!important}.warnings{display:block!important}.warningBox{break-inside:auto!important;page-break-inside:auto!important;background:#fff!important;border-color:#d6e1e8!important}.warningBox summary{font-size:7pt!important;color:#6a5428!important;padding:2mm!important}.warningBody{font-size:6.6pt!important;color:#354d5d!important;padding:0 2mm 2mm!important}.warningDetails table{min-width:0!important}
+  table{width:100%!important;min-width:0!important;table-layout:fixed!important;border-collapse:collapse!important}thead{display:table-header-group!important}tfoot{display:table-footer-group!important}tr{break-inside:avoid!important;page-break-inside:avoid!important}th,td{padding:1.2mm 1mm!important;font-size:6.2pt!important;line-height:1.25!important;white-space:normal!important;overflow-wrap:anywhere!important;word-break:break-word!important;color:#173047!important;border-bottom:1px solid #dbe4e9!important}th{position:static!important;background:#eef4f7!important;color:#29495d!important}.num{text-align:right!important;font-variant-numeric:tabular-nums!important}
+  .supplierTable th:nth-child(1),.supplierTable td:nth-child(1){width:25%}.supplierTable th:nth-child(2),.supplierTable td:nth-child(2){width:14%}.supplierTable th:nth-child(3),.supplierTable td:nth-child(3){width:13%}.supplierTable th:nth-child(4),.supplierTable td:nth-child(4),.supplierTable th:nth-child(5),.supplierTable td:nth-child(5),.supplierTable th:nth-child(6),.supplierTable td:nth-child(6){width:13%}.supplierTable th:nth-child(7),.supplierTable td:nth-child(7){width:9%}
+  .titleTable th:nth-child(1),.titleTable td:nth-child(1){width:14%}.titleTable th:nth-child(2),.titleTable td:nth-child(2){width:4%}.titleTable th:nth-child(3),.titleTable td:nth-child(3){width:17%}.titleTable th:nth-child(4),.titleTable td:nth-child(4){width:15%}.titleTable th:nth-child(5),.titleTable td:nth-child(5){width:10%}.titleTable th:nth-child(6),.titleTable td:nth-child(6),.titleTable th:nth-child(7),.titleTable td:nth-child(7){width:9%}.titleTable th:nth-child(8),.titleTable td:nth-child(8){width:11%}.titleTable th:nth-child(9),.titleTable td:nth-child(9){width:11%}
+  .warningDetails th,.warningDetails td{font-size:5.8pt!important}
+  .footer{font-size:6pt!important;padding:3mm 0!important}
+}
+</style>
+
+
+<style id="cirurgico-1-1-6">
+/* 1.1.6 — contraste, dimensionamento seguro, viewport mensal e PDF sem Avisos. */
+:root{--muted:#d0dee7;--line:#3e6079}
+.hint,.summary,.footer,.source,.calcNote,.legend,.legendNote,.monthCount,.monthMetricHead,.monthMiniCard__delta,.monthComparison__grid small,.monthComparison__grid em,.monthComparison--empty,.warningsHeader span{color:#c3d5e1}
+.axisLab{fill:#b9cedb}.xLab{fill:#d5e3eb}.smallLab{fill:#c4d6e1}.valueLab,.timelineValueP{fill:#f4f9fc}.timelineValueR{fill:#ffe1d9}.pairMark{fill:#eaf4f9}
+.categoryLegend{background:#102b40;border-color:#42647c}.categoryLegend span{color:#f0f7fb}.categoryLegend .legendNote{color:#c3d5e1}
+
+/* Pesquisa com ajuda contextual, sem ocupar uma coluna extra. */
+.filterSearchWrap{position:relative;min-width:0}.filterSearchWrap .filterSearch{height:100%;padding-right:38px}.searchInfo{position:absolute!important;right:10px;top:50%;transform:translateY(-50%);z-index:2}.searchInfo:hover,.searchInfo:focus{transform:translateY(-50%) scale(1.08)}
+
+/* Nenhum texto ou valor pode escapar do componente. */
+.kpi,.monthOverview>span,.monthMiniCard,.monthMetric,.monthComparison__grid>span,.monthMiniCard__classification>span{min-width:0}
+.kpi .value{white-space:nowrap!important;overflow:visible!important;line-height:1.08;transform-origin:left center}
+.monthOverview{min-width:0}.monthOverview>span{grid-template-columns:minmax(0,1fr)!important;align-content:start;overflow:hidden}.monthOverview small,.monthOverview b,.monthOverview em{display:block;min-width:0;max-width:100%}.monthOverview b{margin-top:4px;white-space:nowrap!important;transform-origin:left center}.monthOverview em{margin-top:3px;overflow-wrap:anywhere}
+.monthMetricHead{min-width:0}.monthMetricHead span{min-width:0;overflow-wrap:anywhere}.monthMetricHead b{flex:0 1 auto;min-width:0;transform-origin:left center}
+.monthMiniCard__delta{align-items:flex-start;flex-wrap:wrap}.monthMiniCard__delta>span{min-width:0;overflow-wrap:anywhere}.monthMiniCard__delta b,.monthComparison__grid b{transform-origin:left center}
+.monthComparison__grid>span{grid-template-columns:minmax(0,1fr);overflow:hidden}.monthComparison__grid small,.monthComparison__grid em{overflow-wrap:anywhere}
+.monthMiniCard__supplier,.monthMiniCard__classification>span{overflow-wrap:anywhere}
+
+/* Altura padrão previsível: a rolagem nunca cresce indefinidamente quando não há filtros. */
+.monthlyChart{max-height:1040px}
+
+@media print{
+  /* Avisos são exclusivamente de auditoria na tela/Excel; não entram no PDF. */
+  .warningsSection,.warnings{display:none!important}
+  /* Alto contraste em papel branco. */
+  .categoryLegend{background:#f4f8fa!important;border-color:#b9cad5!important}.categoryLegend span,.categoryLegend .legendNote{color:#213f52!important}
+  .axisLab,.xLab,.smallLab,.valueLab,.timelineValueP,.timelineValueR,.pairMark{fill:#173047!important}
+  .hint,.summary,.footer,.source,.calcNote,.legend,.legendNote,.monthCount,.monthMetricHead,.monthMiniCard__delta,.monthComparison__grid small,.monthComparison__grid em,.monthComparison--empty{color:#405b6d!important}
+  .monthOverview small,.monthOverview em{color:#405b6d!important}.monthOverview b{color:#173047!important}
+  .monthMetricHead span{color:#405b6d!important}.monthMiniCard__delta{color:#405b6d!important}
+  .filterPrintSummary{color:#334f61!important}
+}
+</style>
+
+<style id="tema-aprovado-emissao-1-1-9">
+/* Tema aprovado: azul mais escuro com transição mais evidente para cinza médio.
+   Somente tela; o PDF continua com o tratamento A4 de alto contraste já validado. */
+@media screen{
+  :root{--surface:#edf4f5;--surface2:#e4edef;--text:#102536;--muted:#263d4b;--line:#5d7f8d;--ink:#0c2232}
+  html,body{background:linear-gradient(135deg,#08769f 0%,#168eb8 35%,#6794a0 68%,#9ba8aa 100%)!important;color:#102536!important;background-attachment:fixed!important}
+  .top h1,.eyebrow{color:#f7fbfd!important}.eyebrow{opacity:.96}.period{background:rgba(242,248,249,.82)!important;border-color:rgba(28,71,89,.30)!important;color:#102536!important;box-shadow:0 7px 18px rgba(5,35,48,.10)}
+  .filters{background:rgba(232,241,243,.76)!important;border-color:rgba(33,79,96,.32)!important;box-shadow:0 10px 30px rgba(5,35,48,.10)}
+  select,input,.multiFilter>summary{background:rgba(246,250,251,.90)!important;border-color:#6f929f!important;color:#102536!important}
+  select:hover,input:hover,.multiFilter>summary:hover{background:#f7fbfc!important;border-color:#49798d!important}.multiFilter[open]>summary{background:#f7fbfc!important;border-color:#287ca0!important;box-shadow:0 0 0 3px rgba(20,140,192,.14)!important}
+  .multiFilterName{color:#294b5b!important}.multiFilterValue{color:#0d2434!important}.multiFilter>summary::after{color:#244d60!important}
+  .multiFilterMenu,.monthFilterMenu{background:#f3f8f9!important;border-color:#6f929f!important;box-shadow:0 18px 46px rgba(5,31,43,.28)!important}.multiFilterMenu label,.monthFilterMenu label{color:#142d3d!important}.multiFilterMenu label:hover,.monthFilterMenu label:hover{background:#dcebef!important}.emissionModeToggle{border-bottom-color:#bfd0d6!important}.emissionModeToggle label{background:#e7f0f2!important;border-color:#bdd0d6!important}.emissionFilterHint{color:#405c69!important}
+  .filterSearch::placeholder{color:#536d79!important;opacity:1}.clearFilters{background:rgba(241,247,248,.76)!important;border-color:#638895!important;color:#132c3c!important}.clearFilters:hover{background:#f6fafb!important;border-color:#39768d!important;box-shadow:0 8px 22px rgba(5,35,48,.13)!important}
+  .download{background:#17688d!important;border-color:#4c8ea8!important;color:#fff!important}.download:hover{background:#145f81!important;border-color:#8ab6c7!important}.download.primary{background:linear-gradient(135deg,#55aa78,#428f67)!important;border-color:#7bc092!important}.download.primary:hover{background:linear-gradient(135deg,#61b684,#4b9b70)!important}
+  .kpi,.card{background:linear-gradient(160deg,rgba(248,251,251,.94),rgba(229,238,240,.92))!important;border-color:rgba(59,100,115,.28)!important;color:#102536!important;box-shadow:0 13px 34px rgba(4,36,49,.12)!important}.card:hover,.kpi:hover{border-color:rgba(49,100,120,.48)!important;box-shadow:0 17px 40px rgba(4,36,49,.16)!important}
+  .kpi .label,.kpi .sub,.hint,.summary,.footer,.source,.calcNote,.legend,.legendNote,.monthCount,.monthMetricHead,.monthMiniCard__delta,.monthComparison__grid small,.monthComparison__grid em,.monthComparison--empty,.warningsHeader span{color:#263d4b!important}.kpi .value,.card h2,.summary b{color:#0d2434!important}.warningsHeader h2{color:#102536!important}
+  .info{background:#e9f2f4!important;border-color:#5f8798!important;color:#17465b!important}.info:hover,.info:focus{background:#dcebef!important;border-color:#39768d!important}
+  .warningBox{background:rgba(250,242,214,.91)!important;border-color:#b79a51!important}.warningBox summary{color:#5c4817!important}.warningBox.infoLevel{background:rgba(225,240,245,.94)!important;border-color:#6f9daf!important}.warningBox.infoLevel summary{color:#173e50!important}.warningBody{color:#253c48!important}.warningDetails{border-color:#b7c9cf!important}.warnSug{color:#755a12!important}.pill{background:#e6eff1!important;border-color:#c1d2d7!important;color:#223e4c!important}
+  .categoryLegend{background:rgba(237,244,246,.84)!important;border-color:#9db7c1!important}.categoryLegend span,.categoryLegend .legendNote{color:#183545!important}
+  .grid{stroke:#7895a0!important;opacity:.38!important}.lab,.axisLab,.xLab,.smallLab,.valueLab,.pairMark,.timelineValueP,.timelineValueR{fill:#173047!important}.valueLab,.pairMark{font-weight:800!important}
+  .tableWrap{border-color:#9bb3bc!important;background:rgba(244,248,249,.68)!important}th,td{border-bottom-color:#c3d2d7!important;color:#173047!important}th{background:#dfeaec!important;color:#17384a!important}.source{color:#405c69!important}
+  .monthBlock{border-bottom-color:#b7c9cf!important}.monthTitle{color:#123246!important}.monthTitle::before{background:#168eb8!important;box-shadow:0 0 0 4px rgba(22,142,184,.12)!important}.monthOverview>span{background:#e6eff1!important;border-color:#bfd0d6!important}.monthOverview small,.monthOverview em{color:#405c69!important}.monthOverview b{color:#0f2b3c!important}
+  .monthMiniCard,.monthMiniCard--focus{background:linear-gradient(160deg,#f6fafb,#e7eff1)!important;border-color:#bdcfd5!important;box-shadow:0 12px 28px rgba(5,35,48,.12)!important}.monthMiniCard:hover{border-color:#769eac!important;box-shadow:0 18px 36px rgba(5,35,48,.18)!important}.monthMiniCard__month{background:#e1ecef!important;border-color:#bfd0d6!important;color:#244452!important}.monthMiniCard__classification>span{background:#eaf2f4!important;border-color:#c4d4d9!important;color:#405c69!important}.monthMiniCard__classification b,.monthMetricHead b{color:#102536!important}.monthTrack{background:#d6e2e6!important;border-color:#afc4cb!important}.monthMiniCard__delta{border-top-color:#c6d5da!important}.monthComparison{background:#e8f0f2!important;border-color:#c3d3d8!important}.monthComparison__title{color:#2b4a59!important}
+  .monthFilter>summary{background:rgba(242,248,249,.86)!important;border-color:#6f929f!important;color:#173047!important}.monthFilter[open]>summary{background:#f7fbfc!important;border-color:#39768d!important}.monthFilterLabel{color:#0f6487!important}.monthFilterClear{background:#e6eff1!important;border-color:#bfd0d6!important;color:#213f4e!important}.monthFilterClear:hover{background:#dce9ec!important}
+  .monthlyChart{scrollbar-color:#7999a5 #d7e4e7!important}.monthlyChart::-webkit-scrollbar-track{background:#d7e4e7!important}.monthlyChart::-webkit-scrollbar-thumb{background:#7999a5!important;border-color:#d7e4e7!important}
+}
+</style>
+
+
+<style id="theme-toggle-1-2-0">
+@media screen{
+  .topControls{display:flex;align-items:center;justify-content:flex-end;gap:18px;flex-wrap:wrap}
+  .themeToggle{display:inline-flex;align-items:center;gap:4px;padding:4px;border-radius:14px;border:1px solid rgba(29,70,89,.22);background:rgba(240,246,248,.82);box-shadow:0 8px 20px rgba(5,35,48,.10)}
+  .themeBtn{appearance:none;border:0;background:transparent;color:#314754;font-weight:800;font-size:20px;line-height:1;width:42px;height:38px;padding:0;border-radius:10px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:background .18s ease,color .18s ease,box-shadow .18s ease,transform .18s ease}
+  .filters{grid-template-columns:repeat(4,minmax(135px,1fr)) minmax(210px,1.25fr) minmax(130px,.72fr) minmax(130px,.72fr)!important}
+  .applyFilters,.clearFilters{min-width:0;border-radius:10px;padding:10px 12px;font-size:12px;font-weight:800;cursor:pointer;transition:transform .18s ease,background .18s ease,border-color .18s ease,box-shadow .18s ease}
+  .applyFilters{background:linear-gradient(135deg,#2e87ad,#226f96);border:1px solid #579ab6;color:#fff}
+  .applyFilters:hover{transform:translateY(-1px);background:linear-gradient(135deg,#3895bc,#287ba3);border-color:#83b7cb;box-shadow:0 8px 22px rgba(5,35,48,.13)}
+  .themeBtn:hover{transform:translateY(-1px)}
+  .themeBtn.isActive{background:#ffffff;color:#1f4fd1;box-shadow:0 6px 16px rgba(5,35,48,.12)}
+
+  body[data-theme="light"] .themeToggle,
+  body:not([data-theme]) .themeToggle{background:rgba(240,246,248,.82);border-color:rgba(29,70,89,.22);box-shadow:0 8px 20px rgba(5,35,48,.10)}
+  body[data-theme="light"] .themeBtn,
+  body:not([data-theme]) .themeBtn{color:#425664}
+  body[data-theme="light"] .themeBtn.isActive,
+  body:not([data-theme]) .themeBtn.isActive{background:#fff;color:#2960de;box-shadow:0 6px 16px rgba(5,35,48,.12)}
+  body[data-theme="light"] .applyFilters,body:not([data-theme]) .applyFilters{background:linear-gradient(135deg,#2e87ad,#226f96);border-color:#579ab6;color:#fff}
+  body[data-theme="light"] .warningsHeader span,body:not([data-theme]) .warningsHeader span{color:#102536!important;font-size:13px!important;font-weight:700!important}
+  .supplierValueLab{font-size:11.8px!important;font-weight:850!important}
+  html{zoom:1!important}
+
+  body[data-theme="dark"]{background:linear-gradient(135deg,#042f5d 0%,#08518c 48%,#0b5b94 78%,#0a477f 100%)!important;color:#eef6fb!important;background-attachment:fixed!important}
+  body[data-theme="dark"] .themeToggle{background:rgba(7,53,97,.68)!important;border-color:rgba(112,155,194,.34)!important;box-shadow:0 12px 26px rgba(1,18,39,.20)!important}
+  body[data-theme="dark"] .themeBtn{color:#d8e9f7!important}
+  body[data-theme="dark"] .themeBtn.isActive{background:#0d5cb6!important;color:#ffffff!important;box-shadow:0 6px 16px rgba(2,22,46,.22)!important}
+  body[data-theme="dark"] .top h1,
+  body[data-theme="dark"] .eyebrow{color:#f6fbff!important}
+  body[data-theme="dark"] .period{background:rgba(9,69,121,.72)!important;border-color:rgba(122,165,206,.36)!important;color:#f5fbff!important;box-shadow:0 8px 18px rgba(1,19,41,.12)!important}
+  body[data-theme="dark"] .download{background:#0c4b86!important;border-color:#5f8fb2!important;color:#fff!important}
+  body[data-theme="dark"] .download:hover{background:#115693!important;border-color:#87b3d2!important}
+  body[data-theme="dark"] .download.primary{background:linear-gradient(135deg,#4dab70,#3a8d62)!important;border-color:#70bc90!important}
+  body[data-theme="dark"] .download.primary:hover{background:linear-gradient(135deg,#56b879,#44986c)!important}
+  body[data-theme="dark"] .filters{background:rgba(7,56,101,.54)!important;border-color:rgba(99,139,182,.26)!important;box-shadow:0 12px 28px rgba(1,18,39,.14)!important}
+  body[data-theme="dark"] select,
+  body[data-theme="dark"] input,
+  body[data-theme="dark"] .multiFilter>summary,
+  body[data-theme="dark"] .monthFilter>summary{background:rgba(21,74,125,.78)!important;border-color:#4e79a2!important;color:#f3f9fe!important}
+  body[data-theme="dark"] select:hover,
+  body[data-theme="dark"] input:hover,
+  body[data-theme="dark"] .multiFilter>summary:hover,
+  body[data-theme="dark"] .monthFilter>summary:hover{background:#1a5a95!important;border-color:#80a8cb!important}
+  body[data-theme="dark"] .multiFilter[open]>summary,
+  body[data-theme="dark"] .monthFilter[open]>summary{background:#1a5a95!important;border-color:#95b7d6!important;box-shadow:0 0 0 3px rgba(148,190,228,.13)!important}
+  body[data-theme="dark"] .multiFilterName,
+  body[data-theme="dark"] .monthFilter>summary,
+  body[data-theme="dark"] .clearFilters,
+  body[data-theme="dark"] .searchInfo{color:#f0f7ff!important}
+  body[data-theme="dark"] .multiFilterValue,
+  body[data-theme="dark"] .monthFilterLabel{color:#ffffff!important}
+  body[data-theme="dark"] .multiFilter>summary::after{color:#deefff!important}
+  body[data-theme="dark"] .multiFilterMenu,
+  body[data-theme="dark"] .monthFilterMenu{background:#0d4071!important;border-color:#5d89b3!important;box-shadow:0 18px 40px rgba(0,11,27,.34)!important}
+  body[data-theme="dark"] .multiFilterMenu label,
+  body[data-theme="dark"] .monthFilterMenu label,
+  body[data-theme="dark"] .emissionFilterHint{color:#d1e3f3!important}
+  body[data-theme="dark"] .multiFilterMenu label:hover,
+  body[data-theme="dark"] .monthFilterMenu label:hover{background:#165590!important}
+  body[data-theme="dark"] .emissionModeToggle{border-bottom-color:#4f79a3!important}
+  body[data-theme="dark"] .emissionModeToggle label{background:#12497c!important;border-color:#4f79a3!important;color:#eff7ff!important}
+  body[data-theme="dark"] .filterSearch::placeholder{color:#bfd5e7!important;opacity:1}
+  body[data-theme="dark"] .applyFilters{background:#1768aa!important;border-color:#6b9bc3!important;color:#f6fbff!important}
+  body[data-theme="dark"] .applyFilters:hover{background:#2078bf!important;border-color:#91b8d8!important;box-shadow:0 8px 22px rgba(0,11,27,.22)!important}
+  body[data-theme="dark"] .clearFilters{background:rgba(22,74,124,.85)!important;border-color:#5a84ac!important;color:#f4fbff!important}
+  body[data-theme="dark"] .clearFilters:hover{background:#18528a!important;border-color:#85afcf!important;box-shadow:0 8px 22px rgba(0,11,27,.22)!important}
+  body[data-theme="dark"] .warningsHeader h2,
+  body[data-theme="dark"] .warningsHeader span,
+  body[data-theme="dark"] .hint,
+  body[data-theme="dark"] .summary,
+  body[data-theme="dark"] .footer,
+  body[data-theme="dark"] .source,
+  body[data-theme="dark"] .calcNote,
+  body[data-theme="dark"] .legend,
+  body[data-theme="dark"] .legendNote,
+  body[data-theme="dark"] .monthCount,
+  body[data-theme="dark"] .monthMetricHead,
+  body[data-theme="dark"] .monthMiniCard__delta,
+  body[data-theme="dark"] .monthComparison__grid small,
+  body[data-theme="dark"] .monthComparison__grid em,
+  body[data-theme="dark"] .monthComparison--empty{color:#d5e6f4!important}
+  body[data-theme="dark"] .kpi,
+  body[data-theme="dark"] .card{background:linear-gradient(160deg,rgba(8,60,107,.96),rgba(6,48,88,.95))!important;border-color:rgba(98,137,179,.34)!important;color:#eef6fb!important;box-shadow:0 14px 34px rgba(0,11,27,.18)!important}
+  body[data-theme="dark"] .card:hover,
+  body[data-theme="dark"] .kpi:hover{border-color:rgba(127,166,204,.48)!important;box-shadow:0 18px 40px rgba(0,11,27,.24)!important}
+  body[data-theme="dark"] .kpi .label,
+  body[data-theme="dark"] .kpi .sub{color:#d9ebf8!important}
+  body[data-theme="dark"] .kpi .value,
+  body[data-theme="dark"] .card h2,
+  body[data-theme="dark"] .summary b,
+  body[data-theme="dark"] .monthOverview b,
+  body[data-theme="dark"] .monthMetricHead b,
+  body[data-theme="dark"] .monthMiniCard__classification b{color:#f6fbff!important}
+  body[data-theme="dark"] .info{background:#0b487f!important;border-color:#6b94ba!important;color:#e8f4ff!important}
+  body[data-theme="dark"] .info:hover,
+  body[data-theme="dark"] .info:focus{background:#125793!important;border-color:#9bc1df!important}
+  body[data-theme="dark"] .warningBox{background:rgba(91,78,30,.28)!important;border-color:#9c8742!important}
+  body[data-theme="dark"] .warningBox summary{color:#f6e69f!important}
+  body[data-theme="dark"] .warningBox.infoLevel{background:rgba(11,71,124,.72)!important;border-color:#5a87b2!important}
+  body[data-theme="dark"] .warningBox.infoLevel summary{color:#e9f6ff!important}
+  body[data-theme="dark"] .warningBody{color:#ddebf6!important}
+  body[data-theme="dark"] .warningDetails{border-color:#547ea6!important}
+  body[data-theme="dark"] .warnSug{color:#ffe6a2!important}
+  body[data-theme="dark"] .pill{background:#0a3e6d!important;border-color:#527ea7!important;color:#eef7ff!important}
+  body[data-theme="dark"] .categoryLegend{background:rgba(7,49,88,.64)!important;border-color:#517ca7!important}
+  body[data-theme="dark"] .categoryLegend span,
+  body[data-theme="dark"] .categoryLegend .legendNote{color:#eff7ff!important}
+  body[data-theme="dark"] .grid{stroke:#5b7fa6!important;opacity:.40!important}
+  body[data-theme="dark"] .lab,
+  body[data-theme="dark"] .axisLab,
+  body[data-theme="dark"] .xLab,
+  body[data-theme="dark"] .smallLab,
+  body[data-theme="dark"] .valueLab,
+  body[data-theme="dark"] .pairMark,
+  body[data-theme="dark"] .timelineValueP,
+  body[data-theme="dark"] .timelineValueR{fill:#eef6fb!important}
+  body[data-theme="dark"] .tableWrap{border-color:#5a80a4!important;background:rgba(7,49,88,.28)!important}
+  body[data-theme="dark"] th,
+  body[data-theme="dark"] td{border-bottom-color:#44698d!important;color:#eef6fb!important}
+  body[data-theme="dark"] th{background:#083f72!important;color:#eff7ff!important}
+  body[data-theme="dark"] .monthBlock{border-bottom-color:#4a6f93!important}
+  body[data-theme="dark"] .monthTitle{color:#f7fbff!important}
+  body[data-theme="dark"] .monthTitle::before{background:#4ea7ff!important;box-shadow:0 0 0 4px rgba(78,167,255,.14)!important}
+  body[data-theme="dark"] .monthOverview>span{background:#0b477c!important;border-color:#547ca5!important}
+  body[data-theme="dark"] .monthOverview small,
+  body[data-theme="dark"] .monthOverview em{color:#d7e7f5!important}
+  body[data-theme="dark"] .monthMiniCard,
+  body[data-theme="dark"] .monthMiniCard--focus{background:linear-gradient(160deg,#063764,#082f56)!important;border-color:#4c7195!important;box-shadow:0 10px 24px rgba(1,18,39,.20)!important}
+  body[data-theme="dark"] .monthMiniCard:hover{border-color:#86add0!important;box-shadow:0 14px 28px rgba(1,18,39,.28)!important}
+  body[data-theme="dark"] .monthMiniCard__month{background:#0a3f6d!important;border-color:#4c7195!important;color:#f1f8ff!important}
+  body[data-theme="dark"] .monthMiniCard__classification>span{background:#0b426f!important;border-color:#497197!important;color:#d8e7f4!important}
+  body[data-theme="dark"] .monthTrack{background:#0e3358!important;border-color:#446a90!important}
+  body[data-theme="dark"] .monthMiniCard__delta{border-top-color:#41678b!important}
+  body[data-theme="dark"] .monthComparison{background:#0a3e6b!important;border-color:#4d7397!important}
+  body[data-theme="dark"] .monthComparison__title{color:#f1f8ff!important}
+  body[data-theme="dark"] .monthFilterClear{background:#10497d!important;border-color:#547ca5!important;color:#eef6fb!important}
+  body[data-theme="dark"] .monthFilterClear:hover{background:#165590!important}
+  body[data-theme="dark"] .monthlyChart{scrollbar-color:#789ec2 #0a3f6d!important}
+  body[data-theme="dark"] .monthlyChart::-webkit-scrollbar-track{background:#0a3f6d!important}
+  body[data-theme="dark"] .monthlyChart::-webkit-scrollbar-thumb{background:#789ec2!important;border-color:#0a3f6d!important}
+}
+@media screen and (min-width:1051px){.kpis{grid-template-columns:repeat(5,1fr)!important}}
+@media(max-width:1050px){.filters{grid-template-columns:1fr 1fr!important}}
+@media(max-width:650px){
+  .topControls{justify-content:flex-start;gap:12px}
+  .themeToggle{order:1}
+  .filters{grid-template-columns:1fr!important}
+}
+@media print{.themeToggle,.topControls .themeBtn{display:none!important}}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header class="top"><div><div class="eyebrow">CONTAS A PAGAR • CONTROLE FINANCEIRO</div><h1>Previsto x Realizado</h1></div><div class="topControls"><div class="themeToggle" role="group" aria-label="Alternar tema do relatório"><button type="button" class="themeBtn isActive" id="themeLightBtn" data-theme-value="light" aria-label="Usar tema claro" title="Tema claro" aria-pressed="true">☀</button><button type="button" class="themeBtn" id="themeDarkBtn" data-theme-value="dark" aria-label="Usar tema escuro" title="Tema escuro" aria-pressed="false">☾</button></div><div class="period" id="period"></div></div></header>
+  <div id="printFilterSummary" class="printOnly filterPrintSummary"></div>
+  <nav class="toolbar" id="downloads"></nav>
+  <section class="filters" aria-label="Filtros do relatório">
+    <details class="multiFilter" id="mfCategory"><summary><span class="multiFilterName">Categoria</span><span class="multiFilterValue" id="mfCategoryLabel">Todas</span></summary><div class="multiFilterMenu" id="mfCategoryOptions"></div></details>
+    <details class="multiFilter" id="mfFlow"><summary><span class="multiFilterName">Fluxo JMM</span><span class="multiFilterValue" id="mfFlowLabel">Todos</span></summary><div class="multiFilterMenu" id="mfFlowOptions"></div></details>
+    <details class="multiFilter" id="mfSupplier"><summary><span class="multiFilterName">Fornecedor</span><span class="multiFilterValue" id="mfSupplierLabel">Todos</span></summary><div class="multiFilterMenu" id="mfSupplierOptions"></div></details>
+    <details class="multiFilter emissionFilter" id="mfEmission"><summary><span class="multiFilterName">Emissão/Competência</span><span class="multiFilterValue" id="mfEmissionLabel">Todas</span></summary><div class="multiFilterMenu emissionFilterMenu"><div class="emissionModeToggle" role="radiogroup" aria-label="Forma de filtro por emissão ou competência"><label><input type="radio" name="emissionMode" value="month" checked><span>Mês/ano</span></label><label><input type="radio" name="emissionMode" value="date"><span>Data completa</span></label></div><div class="emissionFilterHint">REALIZADO: Emissão • PREVISTO: Data prevista</div><div id="mfEmissionOptions" class="emissionOptions"></div></div></details>
+    <div class="filterSearchWrap"><input id="fSearch" class="filterSearch" placeholder="Buscar fornecedor/título • ex.: fornecedor A, fornecedor B" aria-label="Pesquisar fornecedor ou título" /><button type="button" class="info searchInfo" aria-label="Como usar a pesquisa" data-tip="Pesquisa nos campos Fornecedor, nome do fornecedor como veio no arquivo de origem e Título. Para pesquisar mais de um valor ao mesmo tempo, separe os termos por vírgula. Exemplo: Fornecedor A, Fornecedor B. O relatório mostrará registros que correspondam a pelo menos um dos termos informados.">i</button></div>
+    <button type="button" id="applyFilters" class="applyFilters">Aplicar Filtros</button>
+    <button type="button" id="clearFilters" class="clearFilters">Limpar filtros</button>
+  </section>
+  <section class="warningsSection" id="warningSection"><div class="warningsHeader"><h2>Avisos</h2><span>Inconsistências e adaptações identificadas no arquivo importado</span></div><div id="warnings" class="warnings"></div></section>
+  <section id="kpis" class="kpis"></section>
+  <section class="card"><div class="cardHead"><h2>Leitura executiva</h2><button class="info" id="infoSummary">i</button></div><div class="hint">Resumo determinístico com base nos dados filtrados</div><div id="summary" class="summary"></div></section>
+  <section class="card cardWide"><div class="cardHead"><h2>Previsto x Realizado por categoria</h2><button class="info" data-tip="Agrupa pela coluna exata Categoria da BASE DADOS. O Previsto é somado a partir do campo exato Valor previsto no layout padrão ou Previsto no layout consolidado. O Realizado é somado a partir do campo exato Vlr.Original (Valor Original) no layout padrão ou Realizado no layout consolidado. Não há deduplicação automática.">i</button></div><div class="hint">Colunas agrupadas • visualização ampliada em largura total • valores exatos em cada coluna</div><div class="categoryLegend"><span><i class="plannedKey"></i>Previsto — coluna clara com contorno</span><span><i class="actualKey"></i>Realizado — coluna sólida</span><span class="legendNote">A cor-base continua identificando a categoria; Previsto e Realizado permanecem lado a lado em cada par.</span></div><div id="chartCategory" class="chart chartCategoryWide"></div></section>
+  <section class="card cardWide"><div class="cardHead monthlyCardHead"><div class="monthlyCardTitle"><h2>Previsto x Realizado mensal por fornecedor, Fluxo JMM e Categoria</h2><button class="info" data-tip="Agrupa pelo mês do campo exato Data prevista no PREVISTO e pelo mês do campo exato Ult. Pgto. (Último Pagamento) no REALIZADO, mantendo a mesma chave canônica de Fornecedor, Fluxo JMM e Categoria da BASE DADOS. Cada card compara a mesma relação com o mês-calendário anterior; ausência no mês anterior nunca é convertida em zero.">i</button></div><details class="monthFilter" id="monthFilter"><summary>Filtrar mês <span class="monthFilterLabel" id="monthFilterLabel">Todos</span></summary><div class="monthFilterMenu"><div id="monthFilterOptions"></div><button type="button" class="monthFilterClear" id="clearMonthFilter">Todos os meses</button></div></details></div><div class="hint">Comparação mês a mês • fornecedor + Fluxo JMM + Categoria • valores exatos e variação contra o mês anterior</div><div id="chartMonthlySupplier" class="monthlyChart"></div></section>
+  <section class="grid2">
+    <div class="card"><div class="cardHead"><h2>Maiores desvios por fornecedor</h2><button class="info" data-tip="O desvio por fornecedor é calculado pela soma do campo de Realizado menos a soma do campo de Previsto para a mesma chave canônica de fornecedor. A chave principal é o campo exato Cód Fornecedor da BASE DADOS. O valor financeiro exato do desvio é exibido para cada fornecedor.">i</button></div><div class="hint">Lollipop • distância financeira entre realizado e previsto • valores exatos</div><div id="chartSupplier" class="chart"></div></div>
+    <div class="card"><div class="cardHead"><h2>Contribuição para o desvio por Fluxo JMM</h2><button class="info" data-tip="Parte da soma total do Previsto e, para cada valor do campo exato Fluxo JMM, aplica a diferença entre a soma do Realizado e a soma do Previsto. O valor final reconcilia com o total Realizado e cada coluna exibe seu valor financeiro exato.">i</button></div><div class="hint">Waterfall • grupos que ampliaram ou reduziram o desvio • valores exatos</div><div id="chartContribution" class="chart chartWaterfall"></div></div>
+  </section>
+  <section class="card printSplit"><div class="cardHead"><h2>Detalhamento por fornecedor</h2><button class="info" data-tip="Previsto e Realizado são consolidados pela chave canônica de fornecedor: primeiro o campo exato Cód Fornecedor da BASE DADOS; somente como fallback determinístico é aceito o nome normalizado exato e inequívoco. Não existe tentativa de parear uma linha prevista com um título realizado individualmente.">i</button></div><div class="hint">Tabela completa conforme filtros atuais</div><div class="tableWrap"><table class="supplierTable"><thead><tr><th>Fornecedor</th><th>Categoria</th><th>Fluxo JMM</th><th>Previsto</th><th>Realizado</th><th>Desvio</th><th>Variação</th></tr></thead><tbody id="supplierRows"></tbody></table></div></section>
+  <section class="card printSplit"><div class="cardHead"><h2>Títulos realizados</h2><button class="info" data-tip="Lista os títulos individuais do REALIZADO. No layout padrão, o valor utilizado nos cálculos vem do campo exato Vlr.Original (Valor Original); no layout consolidado, vem do campo exato Realizado somente quando Situação FC é Realizado. Arquivo, aba e linha de origem são preservados para auditoria.">i</button></div><div class="hint">Lista completa de títulos conforme filtros atuais</div><div class="tableWrap"><table class="titleTable"><thead><tr><th>Origem</th><th>Linha</th><th>Título</th><th>Fornecedor</th><th>Categoria</th><th>Pagamento</th><th>Vencimento</th><th>Pontualidade</th><th>Valor</th></tr></thead><tbody id="titleRows"></tbody></table></div></section>
+  <footer class="footer" id="footer"></footer>
+</div>
+<div id="globalInfoTip" class="globalInfoTip" role="tooltip"></div>
+<script>window.REPORT_DATA=__REPORT_DATA__;</script>
+<script>
+document.documentElement.style.zoom='1';document.body.style.zoom='1';const D=window.REPORT_DATA;const el=id=>document.getElementById(id);const brl=v=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(v)||0);const pct=v=>v===null||v===undefined?'—':new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(v)||0)+'%';const short=v=>{v=Number(v)||0;let a=Math.abs(v);return a>=1e6?(v/1e6).toFixed(1).replace('.',',')+'M':a>=1e3?(v/1e3).toFixed(0)+'k':v.toFixed(0)};const shortMoney=v=>{v=Number(v)||0;let a=Math.abs(v),sign=v<0?'-':'';return a>=1e6?`${sign}R$ ${(a/1e6).toFixed(1).replace('.',',')}M`:a>=1e3?`${sign}R$ ${(a/1e3).toFixed(a>=1e5?0:1).replace('.',',')} mil`:`${sign}R$ ${Math.round(a).toLocaleString('pt-BR')}`};const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+let state={category:[],flow:[],supplier:[],emissionMode:'month',emission:[],search:'',months:[]};
+const ALL_ITEMS=[...(D.previsto||[]),...(D.realizado||[])];
+const FACET_CONFIG={
+  category:{root:'mfCategory',key:'category',field:'category',empty:'Todas'},
+  flow:{root:'mfFlow',key:'flow',field:'flow',empty:'Todos'},
+  supplier:{root:'mfSupplier',key:'supplier',field:'supplier',empty:'Todos'}
+};
+function uniq(arr,key){return [...new Set(arr.map(x=>x[key]).filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'pt-BR'))}
+function selectionText(values,emptyWord){if(!values.length)return emptyWord;if(values.length===1)return values[0];return `${values.length} selecionados`}
+function searchTerms(){return state.search.split(',').map(v=>v.trim().toLowerCase()).filter(Boolean)}
+function passesSearch(x){let terms=searchTerms();if(!terms.length)return true;let hay=`${x.supplier||''} ${x.supplier_source||''} ${x.title||''}`.toLowerCase();return terms.some(q=>hay.includes(q))}
+function passExcept(x,excludedFacet=''){
+  if(excludedFacet!=='category'&&!matchesSelected(x.category,state.category))return false;
+  if(excludedFacet!=='flow'&&!matchesSelected(x.flow,state.flow))return false;
+  if(excludedFacet!=='supplier'&&!matchesSelected(x.supplier,state.supplier))return false;
+  if(excludedFacet!=='emission'&&state.emission.length&&!state.emission.includes(emissionKeyForItem(x)))return false;
+  if(!passesSearch(x))return false;
+  return true;
+}
+function possibleFacetValues(facet){
+  const items=ALL_ITEMS.filter(x=>passExcept(x,facet));
+  if(facet==='emission')return [...new Set(items.map(x=>{let raw=String(competenceDateForItem(x)||'');return raw?raw.slice(0,state.emissionMode==='date'?10:7):''}).filter(Boolean))].sort();
+  const cfg=FACET_CONFIG[facet];return uniq(items,cfg.field);
+}
+function updateStandardFilterLabel(facet){const cfg=FACET_CONFIG[facet],label=el(cfg.root+'Label'),values=state[cfg.key];label.textContent=selectionText(values,cfg.empty);label.title=values.join(', ')}
+function paintStandardFilter(facet){const cfg=FACET_CONFIG[facet],box=el(cfg.root+'Options'),selected=new Set(state[cfg.key]),values=possibleFacetValues(facet);box.innerHTML=values.map(v=>`<label><input type="checkbox" value="${esc(v)}"${selected.has(v)?' checked':''}><span>${esc(v)}</span></label>`).join('');updateStandardFilterLabel(facet)}
+function paintEmissionFilter(){const box=el('mfEmissionOptions'),selected=new Set(state.emission),values=possibleFacetValues('emission');box.innerHTML=values.map(v=>`<label><input type="checkbox" value="${esc(v)}"${selected.has(v)?' checked':''}><span>${esc(emissionOptionLabel(v))}</span></label>`).join('');updateEmissionFilterLabel()}
+function pruneUnavailableSelections(){let changed=false;for(let round=0;round<4;round++){let roundChanged=false;for(const facet of ['category','flow','supplier']){const cfg=FACET_CONFIG[facet],allowed=new Set(possibleFacetValues(facet)),next=state[cfg.key].filter(v=>allowed.has(v));if(next.length!==state[cfg.key].length){state[cfg.key]=next;roundChanged=true;changed=true}}const allowedEmission=new Set(possibleFacetValues('emission')),nextEmission=state.emission.filter(v=>allowedEmission.has(v));if(nextEmission.length!==state.emission.length){state.emission=nextEmission;roundChanged=true;changed=true}if(!roundChanged)break}return changed}
+function refreshFilterOptions(){pruneUnavailableSelections();paintStandardFilter('category');paintStandardFilter('flow');paintStandardFilter('supplier');paintEmissionFilter();refreshMonthFilterOptions()}
+function applyFiltersNow(){refreshFilterOptions();render()}
+function buildMultiFilter(rootId,key){const box=el(rootId+'Options');box.addEventListener('change',e=>{if(!(e.target instanceof HTMLInputElement))return;state[key]=[...box.querySelectorAll('input:checked')].map(x=>x.value);applyFiltersNow()})}
+buildMultiFilter('mfCategory','category');buildMultiFilter('mfFlow','flow');buildMultiFilter('mfSupplier','supplier');
+el('period').textContent=D.period;el('footer').textContent=`Gerado em ${new Date(D.generatedAt).toLocaleString('pt-BR')} • Fontes: ${D.sourceName}`;
+const links=[['previsto','Excel • Previsto'],['realizado','Excel • Realizado']];el('downloads').innerHTML=`<button type="button" class="download primary" id="printFilteredPdf">Salvar PDF com filtros atuais</button>`+links.map(([k,t])=>`<a class="download" href="${esc(D.downloads[k])}" download>${t}</a>`).join('');
+const THEME_KEY='contasapagar-report-theme';
+function applyTheme(theme){const safe=theme==='dark'?'dark':'light';document.body.setAttribute('data-theme',safe);const lightBtn=el('themeLightBtn'),darkBtn=el('themeDarkBtn');if(lightBtn&&darkBtn){lightBtn.classList.toggle('isActive',safe==='light');darkBtn.classList.toggle('isActive',safe==='dark');lightBtn.setAttribute('aria-pressed',String(safe==='light'));darkBtn.setAttribute('aria-pressed',String(safe==='dark'));}}
+function initialTheme(){try{const saved=localStorage.getItem(THEME_KEY);if(saved==='dark'||saved==='light')return saved;}catch(_e){}return 'light'}
+applyTheme(initialTheme());
+[el('themeLightBtn'),el('themeDarkBtn')].forEach(btn=>btn&&btn.addEventListener('click',()=>{const next=btn.getAttribute('data-theme-value')==='dark'?'dark':'light';applyTheme(next);try{localStorage.setItem(THEME_KEY,next)}catch(_e){}}));
+function warningRows(w){return (w.details||[]).map(d=>{const sug=(d.suggestions||[]).map(s=>`${esc(s.code)} - ${esc(s.supplier)} (${Math.round((s.score||0)*1000)/10}%)`).join('<br>');return `<tr><td>${esc(d.source_file||'—')}</td><td>${esc(d.source_sheet||'—')}</td><td>${d.source_row||'—'}</td><td>${esc(d.title||'—')}</td><td>${esc(d.supplier_code||'—')}</td><td>${esc(d.supplier||'—')}</td><td class="num">${d.value!==undefined?brl(d.value):'—'}</td><td class="warnSug">${sug||'—'}</td></tr>`}).join('')}
+function warningPresentation(w){let title=String(w.title||'Aviso'),fields=[];if(/^Classificação ausente no PREVISTO/i.test(title)){fields=['Fluxo JMM','Categoria'];title='Campos Fluxo JMM e Categoria sem classificação no PREVISTO'}else if(/^Classificação ausente no REALIZADO/i.test(title)){fields=['Fluxo JMM','Categoria'];title='Campos Fluxo JMM e Categoria sem classificação no REALIZADO'}else if(/Datas inválidas no PREVISTO/i.test(title)){fields=['Data prevista'];title='Campo Data prevista com valor não reconhecido no PREVISTO'}else if(/Datas inválidas no REALIZADO/i.test(title)){fields=['Emissão','Ult. Pgto.','Vencimento'];title='Campos Emissão, Ult. Pgto. (Último Pagamento) e/ou Vencimento com valor não reconhecido no REALIZADO'}return {title,fields}}
+const warningList=D.warnings||[];el('warningSection').style.display=warningList.length?'block':'none';el('warnings').innerHTML=warningList.map(w=>{const meta=warningPresentation(w),fieldNote=meta.fields.length?`<p><b>Coluna(s) com informação ausente, inválida ou não classificada: ${meta.fields.map(f=>'\"'+esc(f)+'\"').join(', ')}.</b> A automação mantém o registro auditável e não inventa valores para preencher a informação.</p>`:'';return `<details class="warningBox ${w.level==='info'?'infoLevel':''}"><summary>⚠ ${esc(meta.title)} — ${esc(w.summary)}</summary><div class="warningBody">${fieldNote}<p>Abra os detalhes para localizar exatamente arquivo, aba e linha. Sugestões por similaridade são apenas informativas e nunca alteram os indicadores automaticamente.</p>${(w.details||[]).length?`<div class="warningDetails"><table><thead><tr><th>Arquivo</th><th>Aba</th><th>Linha</th><th>Título</th><th>Código</th><th>Fornecedor</th><th>Valor</th><th>Sugestões não aplicadas</th></tr></thead><tbody>${warningRows(w)}</tbody></table></div>`:''}</div></details>`}).join('');
+function matchesSelected(value,selected){return !selected.length||selected.includes(value||'')}
+function competenceDateForItem(x){return x.kind==='realizado'?(x.emission_date||''):(x.date||'')}
+function emissionKeyForItem(x){let raw=String(competenceDateForItem(x)||'');if(!raw)return '';return state.emissionMode==='date'?raw.slice(0,10):raw.slice(0,7)}
+function pass(x){if(!matchesSelected(x.category,state.category))return false;if(!matchesSelected(x.flow,state.flow))return false;if(!matchesSelected(x.supplier,state.supplier))return false;if(state.emission.length&&!state.emission.includes(emissionKeyForItem(x)))return false;let terms=state.search.split(',').map(v=>v.trim().toLowerCase()).filter(Boolean);if(terms.length){let hay=`${x.supplier||''} ${x.supplier_source||''} ${x.title||''}`.toLowerCase();if(!terms.some(q=>hay.includes(q)))return false}return true}
+function group(arr,key){let m={};arr.forEach(x=>{let k=x[key]||'Não classificado';m[k]=(m[k]||0)+(Number(x.value)||0)});return m}
+function supplierAgg(p,r){let m={};function add(x,t){let k=x.supplier_key||x.supplier;if(!m[k])m[k]={supplier:x.supplier||'Sem fornecedor',category:x.category||'',flow:x.flow||'',p:0,r:0};m[k][t]+=Number(x.value)||0;if(!m[k].category||m[k].category==='Não classificado')m[k].category=x.category||m[k].category;if(!m[k].flow||m[k].flow==='Não classificado')m[k].flow=x.flow||m[k].flow}p.forEach(x=>add(x,'p'));r.forEach(x=>add(x,'r'));return Object.values(m).map(x=>({...x,d:x.r-x.p,v:x.p?((x.r-x.p)/x.p*100):null}))}
+function svgWrap(content,w=720,h=320){return `<svg viewBox="0 0 ${w} ${h}" role="img">${content}</svg>`}
+function splitSvgLabel(text,maxChars=13,maxLines=2){let words=String(text||'').trim().split(/\s+/),lines=[],current='';for(const word of words){let test=current?current+' '+word:word;if(test.length<=maxChars||!current){current=test}else{lines.push(current);current=word;if(lines.length===maxLines-1)break}}if(current&&lines.length<maxLines)lines.push(current);let used=lines.join(' ').split(/\s+/).length;if(used<words.length&&lines.length){let last=lines.length-1;lines[last]=(lines[last].slice(0,Math.max(4,maxChars-1)).trimEnd()+'…')}return lines}
+function categoryColumns(p,r){let gp=group(p,'category'),gr=group(r,'category'),rows=[...new Set([...Object.keys(gp),...Object.keys(gr)])].map(k=>({label:k,p:gp[k]||0,r:gr[k]||0})).sort((a,b)=>Math.max(Math.abs(b.p),Math.abs(b.r))-Math.max(Math.abs(a.p),Math.abs(a.r))).slice(0,8);if(!rows.length)return '<div class="empty">Sem dados</div>';const palette=['#8EC5E8','#F1B6A8','#A8D8C5','#D4C0E8','#EBCB88','#8FCCD1','#C7D89B','#E4B8CF'];let w=1240,h=430,l=82,right=24,b=104,t=48,pw=w-l-right,ph=h-t-b,max=Math.max(...rows.flatMap(x=>[Math.abs(x.p),Math.abs(x.r)]),1),slot=pw/rows.length,bw=Math.min(42,slot*.26),s='';for(let i=0;i<5;i++){let yy=t+ph*i/4,val=max*(1-i/4);s+=`<line class="grid" x1="${l}" y1="${yy}" x2="${w-right}" y2="${yy}"/><text class="axisLab" x="${l-10}" y="${yy+4}" text-anchor="end">${shortMoney(val)}</text>`}rows.forEach((x,i)=>{let cx=l+slot*i+slot/2,ph1=ph*Math.max(0,x.p)/max,rh=ph*Math.max(0,x.r)/max,color=palette[i%palette.length],labelLines=splitSvgLabel(x.label,17,2),labelY=t+ph+44,pTop=t+ph-ph1,rTop=t+ph-rh,pLabelY=Math.max(14,pTop-8),rLabelY=Math.max(27,rTop-8);if(Math.abs(pLabelY-rLabelY)<14)rLabelY=Math.max(14,rLabelY-15);s+=`<rect x="${cx-bw-5}" y="${pTop}" width="${bw}" height="${ph1}" rx="5" fill="${color}" fill-opacity=".18" stroke="${color}" stroke-width="2.4"/><rect x="${cx+5}" y="${rTop}" width="${bw}" height="${rh}" rx="5" fill="${color}" stroke="${color}" stroke-width="1"/><text class="valueLab valueExact" x="${cx-bw/2-5}" y="${pLabelY}" text-anchor="middle">${esc(brl(x.p))}</text><text class="valueLab valueExact" x="${cx+bw/2+5}" y="${rLabelY}" text-anchor="middle">${esc(brl(x.r))}</text><text class="pairMark" x="${cx-bw/2-5}" y="${t+ph+18}" text-anchor="middle">P</text><text class="pairMark" x="${cx+bw/2+5}" y="${t+ph+18}" text-anchor="middle">R</text>`;labelLines.forEach((txt,j)=>{s+=`<text class="xLab" x="${cx}" y="${labelY+j*14}" text-anchor="middle">${esc(txt)}</text>`})});return svgWrap(s,w,h)}
+const MONTHS_PT=['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+function monthLabel(iso,includeYear=false){let [yy,mm]=String(iso).split('-');let label=MONTHS_PT[Math.max(0,Number(mm)-1)]||'';return includeYear?`${label}/${String(yy).slice(-2)}`:label}
+function emissionOptionLabel(value,mode=state.emissionMode){if(mode==='date'){let [y,m,d]=String(value).split('-');return y&&m&&d?`${d}/${m}/${y}`:String(value)}let [y,m]=String(value).split('-');let month=MONTHS_PT[Math.max(0,Number(m)-1)]||m;return `${month}/${y}`}
+function emissionOptionValues(mode=state.emissionMode,items=ALL_ITEMS){let raw=items.map(x=>competenceDateForItem(x)).filter(Boolean).map(x=>String(x).slice(0,mode==='date'?10:7));return [...new Set(raw)].sort()}
+function updateEmissionFilterLabel(){const label=el('mfEmissionLabel');if(!state.emission.length){label.textContent='Todas';label.title='';return}label.textContent=state.emission.length===1?emissionOptionLabel(state.emission[0]):`${state.emission.length} selecionadas`;label.title=state.emission.map(v=>emissionOptionLabel(v)).join(', ')}
+function buildEmissionFilter(){const root=el('mfEmission'),box=el('mfEmissionOptions'),radios=[...root.querySelectorAll('input[name="emissionMode"]')];radios.forEach(r=>r.addEventListener('change',()=>{if(!r.checked)return;state.emissionMode=r.value==='date'?'date':'month';state.emission=[];applyFiltersNow()}));box.addEventListener('change',e=>{if(!(e.target instanceof HTMLInputElement))return;state.emission=[...box.querySelectorAll('input:checked')].map(x=>x.value);applyFiltersNow()})}
+function supplierColor(name){const colors=['#8ED1FF','#F1B6A8','#A8D8C5','#D4C0E8','#EBCB88','#8FCCD1','#C7D89B','#E4B8CF','#9CB7F0','#F0C39C'];let n=0;for(const ch of String(name||''))n=(n*31+ch.charCodeAt(0))>>>0;return colors[n%colors.length]}
+function previousMonthKey(month){let [y,m]=String(month).split('-').map(Number);return m===1?`${y-1}-12`:`${y}-${String(m-1).padStart(2,'0')}`}
+function monthlyMiniCard(x,max,multiYear,focus=false){let wp=Math.max(x.p?1.2:0,Math.min(100,Math.abs(x.p)/max*100)),wr=Math.max(x.r?1.2:0,Math.min(100,Math.abs(x.r)/max*100)),delta=x.r-x.p,color=supplierColor(x.supplier),deltaClass=delta>=0?'deltaPositive':'deltaNegative',periodTag=x.periodLabel||monthLabel(x.month+'-01',multiYear);let compare='';if(x.hasPrevious){let pp=x.previousP||0,pr=x.previousR||0,dp=x.p-pp,dr=x.r-pr,ppct=pp?dp/Math.abs(pp)*100:null,rpct=pr?dr/Math.abs(pr)*100:null,prevLabel=monthLabel(x.previousMonth+'-01',multiYear);compare=`<div class="monthComparison"><div class="monthComparison__title">Comparação com ${prevLabel}</div><div class="monthComparison__grid"><span><small>Previsto</small><b class="${dp>=0?'momUp':'momDown'}">${esc(brl(dp))}</b><em>${pct(ppct)}</em></span><span><small>Realizado</small><b class="${dr>=0?'momUp':'momDown'}">${esc(brl(dr))}</b><em>${pct(rpct)}</em></span></div></div>`}else{compare=`<div class="monthComparison monthComparison--empty"><div class="monthComparison__title">Comparação mensal</div><span>Sem registro da mesma relação no mês anterior</span></div>`}return `<article class="monthMiniCard${focus?' monthMiniCard--focus':''}" style="--supplier-color:${color}"><div class="monthMiniCard__head"><strong class="monthMiniCard__supplier" title="${esc(x.supplier)}">${esc(x.supplier)}</strong><span class="monthMiniCard__month">${periodTag}</span></div><div class="monthMiniCard__classification"><span class="monthMiniCard__flow" title="${esc(x.flow)}">Fluxo JMM: <b>${esc(x.flow)}</b></span><span class="monthMiniCard__category" title="${esc(x.category)}">Categoria: <b>${esc(x.category)}</b></span></div><div class="monthMetric"><div class="monthMetricHead"><span>Previsto</span><b>${esc(brl(x.p))}</b></div><div class="monthTrack"><div class="monthFill monthFillP" style="width:${wp}%"></div></div></div><div class="monthMetric"><div class="monthMetricHead"><span>Realizado</span><b>${esc(brl(x.r))}</b></div><div class="monthTrack"><div class="monthFill monthFillR" style="width:${wr}%"></div></div></div><div class="monthMiniCard__delta"><span>Desvio do mês</span><b class="${deltaClass}">${esc(brl(delta))}</b></div>${compare}</article>`}
+function monthlySupplierCategoryChart(p,r){let map={};function add(x,side){if(!x.date)return;let month=String(x.date).slice(0,7),supplier=x.supplier||'Sem fornecedor',supplierKey=x.supplier_key||supplier,flow=x.flow||'Não classificado',category=x.category||'Não classificado',key=[month,supplierKey,flow,category].join('¦');if(!map[key])map[key]={month,supplierKey,supplier,flow,category,p:0,r:0};map[key][side]+=Number(x.value)||0}p.forEach(x=>add(x,'p'));r.forEach(x=>add(x,'r'));let rows=Object.values(map);if(!rows.length)return '<div class="empty" style="min-height:220px">Sem datas válidas para esta visualização</div>';let allMonths=[...new Set(rows.map(x=>x.month))].sort(),months=state.months.length?allMonths.filter(m=>state.months.includes(m)):allMonths,multiYear=new Set(allMonths.map(m=>m.slice(0,4))).size>1,index={};if(!months.length)return '<div class="empty" style="min-height:220px">Não há dados nos meses selecionados para os filtros atuais</div>';rows.forEach(x=>index[[x.month,x.supplierKey,x.flow,x.category].join('¦')]=x);rows.forEach(x=>{x.previousMonth=previousMonthKey(x.month);let prev=index[[x.previousMonth,x.supplierKey,x.flow,x.category].join('¦')];x.hasPrevious=!!prev;x.previousP=prev?prev.p:null;x.previousR=prev?prev.r:null});let visibleRows=rows.filter(x=>months.includes(x.month)),max=Math.max(...visibleRows.flatMap(x=>[Math.abs(x.p),Math.abs(x.r)]),1),monthTotals={};allMonths.forEach(m=>monthTotals[m]={p:0,r:0});rows.forEach(x=>{monthTotals[x.month].p+=x.p;monthTotals[x.month].r+=x.r});let filterParts=[];if(state.supplier.length)filterParts.push(`Fornecedor: ${esc(selectionText(state.supplier,'Todos'))}`);if(state.flow.length)filterParts.push(`Fluxo JMM: ${esc(selectionText(state.flow,'Todos'))}`);if(state.category.length)filterParts.push(`Categoria: ${esc(selectionText(state.category,'Todas'))}`);let focus='';if(filterParts.length){let latest=months[months.length-1],focusRows=visibleRows.filter(x=>x.month===latest).sort((a,b)=>Math.max(Math.abs(b.p),Math.abs(b.r))-Math.max(Math.abs(a.p),Math.abs(a.r))).slice(0,6).map(x=>({...x,periodLabel:'MÊS MAIS RECENTE'}));focus=`<section class="filterSpotlight"><div class="filterSpotlight__head"><strong>Filtro em destaque — ${filterParts.join(' • ')}</strong><span>${focusRows.length} relação(ões) em ${monthLabel(latest+'-01',multiYear)}</span></div><div class="monthCardsGrid">${focusRows.map(x=>monthlyMiniCard(x,max,multiYear,true)).join('')}</div></section>`}let blocks=months.map(month=>{let mr=visibleRows.filter(x=>x.month===month).sort((a,b)=>Math.max(Math.abs(b.p),Math.abs(b.r))-Math.max(Math.abs(a.p),Math.abs(a.r))),tot=monthTotals[month],prevMonth=previousMonthKey(month),prev=monthTotals[prevMonth],summary='';if(prev){let dp=tot.p-prev.p,dr=tot.r-prev.r;summary=`<div class="monthOverview"><span><small>Previsto do mês</small><b>${esc(brl(tot.p))}</b><em class="${dp>=0?'momUp':'momDown'}">vs ${monthLabel(prevMonth+'-01',multiYear)}: ${esc(brl(dp))}</em></span><span><small>Realizado do mês</small><b>${esc(brl(tot.r))}</b><em class="${dr>=0?'momUp':'momDown'}">vs ${monthLabel(prevMonth+'-01',multiYear)}: ${esc(brl(dr))}</em></span></div>`}else{summary=`<div class="monthOverview"><span><small>Previsto do mês</small><b>${esc(brl(tot.p))}</b><em>Primeiro mês disponível</em></span><span><small>Realizado do mês</small><b>${esc(brl(tot.r))}</b><em>Primeiro mês disponível</em></span></div>`}return `<section class="monthBlock"><div class="monthHead"><div class="monthHeadMain"><span class="monthTitle">${monthLabel(month+'-01',multiYear)}</span><span class="monthCount">${mr.length} relação(ões) fornecedor / fluxo / categoria</span></div>${summary}</div><div class="monthCardsGrid">${mr.map(x=>monthlyMiniCard(x,max,multiYear,false)).join('')}</div></section>`}).join('');return focus+blocks}
+function lineChart(p,r){let gp={},gr={};p.filter(x=>x.date).forEach(x=>{let m=String(x.date).slice(0,7);gp[m]=(gp[m]||0)+(Number(x.value)||0)});r.filter(x=>x.date).forEach(x=>{let m=String(x.date).slice(0,7);gr[m]=(gr[m]||0)+(Number(x.value)||0)});let months=[...new Set([...Object.keys(gp),...Object.keys(gr)])].sort();if(!months.length)return '<div class="empty">Sem datas válidas para o período</div>';let cp=0,cr=0,pts=months.map(m=>{cp+=gp[m]||0;cr+=gr[m]||0;return[m,cp,cr]}),w=1240,h=430,l=88,right=30,t=62,b=74,max=Math.max(...pts.flatMap(x=>[x[1],x[2]]),1),pw=w-l-right,ph=h-t-b,x=i=>l+(pts.length===1?pw/2:pw*i/(pts.length-1)),y=v=>t+ph-ph*v/max,s='';for(let i=0;i<5;i++){let yy=t+ph*i/4,val=max*(1-i/4);s+=`<line class="grid" x1="${l}" y1="${yy}" x2="${w-right}" y2="${yy}"/><text class="axisLab" x="${l-10}" y="${yy+4}" text-anchor="end">${shortMoney(val)}</text>`}let pp=pts.map((d,i)=>`${x(i)},${y(d[1])}`).join(' '),rr=pts.map((d,i)=>`${x(i)},${y(d[2])}`).join(' ');if(pts.length>1){s+=`<polyline class="lineGlow lineP" points="${pp}"/><polyline class="lineGlow lineR" points="${rr}"/>`}let years=new Set(months.map(m=>m.slice(0,4))),includeYear=years.size>1;pts.forEach((d,i)=>{let xx=x(i),yp=y(d[1]),yr=y(d[2]),pY=Math.max(18,yp-12),rY=Math.max(30,yr-12);if(Math.abs(pY-rY)<18){if(yp<=yr)rY=Math.min(t+ph-4,yr+18);else pY=Math.min(t+ph-4,yp+18)}s+=`<circle cx="${xx}" cy="${yp}" r="4.2" fill="#65a9d5" stroke="#17364f" stroke-width="2"/><circle cx="${xx}" cy="${yr}" r="4.2" fill="#d4efff" stroke="#17364f" stroke-width="2"/><text class="timelineValueP" x="${xx}" y="${pY}" text-anchor="middle">${esc(brl(d[1]))}</text><text class="timelineValueR" x="${xx}" y="${rY}" text-anchor="middle">${esc(brl(d[2]))}</text><line x1="${xx}" y1="${t+ph}" x2="${xx}" y2="${t+ph+6}" stroke="#5d7f97"/><text class="xLab monthTick" x="${xx}" y="${h-25}" text-anchor="middle">${monthLabel(d[0]+'-01',includeYear)}</text>`});s+=`<g transform="translate(${w-260},18)"><circle cx="0" cy="5" r="4" fill="#65a9d5"/><text class="smallLab" x="10" y="9">Previsto acumulado</text><circle cx="126" cy="5" r="4" fill="#d4efff"/><text class="smallLab" x="136" y="9">Realizado acumulado</text></g>`;return svgWrap(s,w,h)}
+function lollipop(rows){rows=[...rows].sort((a,b)=>Math.abs(b.d)-Math.abs(a.d)).slice(0,8);if(!rows.length)return '<div class="empty">Sem dados</div>';let w=820,h=360,l=220,right=150,t=20,b=28,pw=w-l-right,max=Math.max(...rows.map(x=>Math.abs(x.d)),1),zero=l+pw/2,rh=(h-t-b)/rows.length,s=`<line class="grid" x1="${zero}" y1="${t}" x2="${zero}" y2="${h-b}"/><text class="axisLab" x="${zero}" y="${h-7}" text-anchor="middle">0</text>`;rows.forEach((x,i)=>{let yy=t+(i+.5)*rh,dx=(pw/2-14)*x.d/max,color=x.d>=0?'#61c79a':'#ef7d80';s+=`<text class="lab" x="4" y="${yy+4}">${esc(x.supplier.slice(0,29))}</text><line x1="${zero}" y1="${yy}" x2="${zero+dx}" y2="${yy}" stroke="${color}" stroke-width="5" stroke-linecap="round"/><circle cx="${zero+dx}" cy="${yy}" r="6" fill="${color}"/><text class="valueLab supplierValueLab" x="${w-4}" y="${yy+4}" text-anchor="end" fill="${color}">${esc(brl(x.d))}</text>`});return svgWrap(s,w,h)}
+function waterfall(p,r){let gp=group(p,'flow'),gr=group(r,'flow'),all=[...new Set([...Object.keys(gp),...Object.keys(gr)])].map(k=>({label:k,v:(gr[k]||0)-(gp[k]||0)})).sort((a,b)=>Math.abs(b.v)-Math.abs(a.v));let rows=all.slice(0,5);if(all.length>5)rows.push({label:'Outros fluxos',v:all.slice(5).reduce((a,x)=>a+x.v,0)});let planned=p.reduce((a,x)=>a+(Number(x.value)||0),0);if(!rows.length)return '<div class="empty">Sem dados</div>';let cumulative=[planned],cur=planned;rows.forEach(x=>{cur+=x.v;cumulative.push(cur)});let actual=cur,domainMin=Math.min(0,...cumulative),domainMax=Math.max(0,...cumulative),range=domainMax-domainMin||1,w=820,h=380,l=82,right=18,t=24,b=92,pw=w-l-right,ph=h-t-b,slot=pw/(rows.length+2),bw=Math.min(58,slot*.58),y=v=>t+ph-(v-domainMin)/range*ph,s='';for(let i=0;i<5;i++){let val=domainMax-(range*i/4),yy=y(val);s+=`<line class="grid" x1="${l}" y1="${yy}" x2="${w-right}" y2="${yy}"/><text class="axisLab" x="${l-10}" y="${yy+4}" text-anchor="end">${shortMoney(val)}</text>`}let zeroY=y(0),startX=l+slot*.2,startTop=y(planned);s+=`<rect x="${startX}" y="${Math.min(startTop,zeroY)}" width="${bw}" height="${Math.max(3,Math.abs(zeroY-startTop))}" rx="4" fill="#76b7dd"/><text class="valueLab" x="${startX+bw/2}" y="${Math.max(t+11,Math.min(startTop,zeroY)-7)}" text-anchor="middle">${esc(brl(planned))}</text>`;splitSvgLabel('Previsto',13,2).forEach((txt,j)=>{s+=`<text class="xLab" x="${startX+bw/2}" y="${h-b+26+j*14}" text-anchor="middle">${txt}</text>`});let prev=planned;rows.forEach((row,i)=>{let next=prev+row.v,x0=l+(i+1)*slot+slot*.2,y1=y(prev),y2=y(next),color=row.v>=0?'#ef7d80':'#61c79a';s+=`<line x1="${x0-slot+bw}" y1="${y1}" x2="${x0}" y2="${y1}" stroke="#6e8ba0" stroke-dasharray="4 4" opacity=".75"/><rect x="${x0}" y="${Math.min(y1,y2)}" width="${bw}" height="${Math.max(3,Math.abs(y2-y1))}" rx="4" fill="${color}"/><text class="valueLab" x="${x0+bw/2}" y="${row.v>=0?Math.max(t+11,Math.min(y1,y2)-7):Math.min(h-b-5,Math.max(y1,y2)+15)}" text-anchor="middle">${esc(brl(row.v))}</text>`;splitSvgLabel(row.label,13,2).forEach((txt,j)=>{s+=`<text class="xLab" x="${x0+bw/2}" y="${h-b+26+j*14}" text-anchor="middle">${esc(txt)}</text>`});prev=next});let xF=l+(rows.length+1)*slot+slot*.2,finalY=y(actual);s+=`<line x1="${xF-slot+bw}" y1="${finalY}" x2="${xF}" y2="${finalY}" stroke="#6e8ba0" stroke-dasharray="4 4" opacity=".75"/><rect x="${xF}" y="${Math.min(finalY,zeroY)}" width="${bw}" height="${Math.max(3,Math.abs(zeroY-finalY))}" rx="4" fill="#9cd8ff"/><text class="valueLab" x="${xF+bw/2}" y="${Math.max(t+11,Math.min(finalY,zeroY)-7)}" text-anchor="middle">${esc(brl(actual))}</text><text class="xLab" x="${xF+bw/2}" y="${h-b+26}" text-anchor="middle">Realizado</text>`;return svgWrap(s,w,h)}
+function donut(r){let c={Antecipado:0,'Dentro do Prazo':0,Atrasado:0,'Sem data':0};r.forEach(x=>{let key=x.punctuality||'Sem data';if(key==='No vencimento')key='Dentro do Prazo';c[key]=(c[key]||0)+1});let colors={Antecipado:'#8EC5E8','Dentro do Prazo':'#61c79a',Atrasado:'#ef7d80','Sem data':'#e5b45d'},total=Object.values(c).reduce((a,b)=>a+b,0)||1,rad=82,cx=410,cy=142,circ=2*Math.PI*rad,offset=0,s='';Object.entries(c).forEach(([k,v])=>{if(!v)return;let len=circ*v/total;s+=`<circle cx="${cx}" cy="${cy}" r="${rad}" fill="none" stroke="${colors[k]}" stroke-width="42" stroke-dasharray="${len} ${circ-len}" stroke-dashoffset="${-offset}" transform="rotate(-90 ${cx} ${cy})"/>`;offset+=len});s+=`<circle cx="${cx}" cy="${cy}" r="55" fill="#1b3b58"/><text x="${cx}" y="${cy-3}" text-anchor="middle" fill="#f4f8fb" font-size="25" font-weight="800">${total}</text><text x="${cx}" y="${cy+18}" text-anchor="middle" fill="#b9cad7" font-size="11">títulos</text>`;el('punctualityLegend').innerHTML=Object.entries(c).filter(x=>x[1]).map(([k,v])=>`<span><i style="background:${colors[k]}"></i>${k}: <b>${v}</b> (${new Intl.NumberFormat('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1}).format(v/total*100)}%)</span>`).join('');return svgWrap(s,820,290)}
+function render(){let p=D.previsto.filter(pass),r=D.realizado.filter(pass),planned=p.reduce((a,x)=>a+(Number(x.value)||0),0),actual=r.reduce((a,x)=>a+(Number(x.value)||0),0),variance=actual-planned,vpct=planned?variance/planned*100:null,sups=supplierAgg(p,r),pun=r.filter(x=>x.punctuality&&x.punctuality!=='Sem data'),ont=pun.filter(x=>x.punctuality!=='Atrasado').length,onrate=pun.length?ont/pun.length*100:null,infos=D.calculationInfo;
+el('kpis').innerHTML=[['Previsto',brl(planned),'Base planejada',infos.planned],['Realizado',brl(actual),`${r.length} títulos`,infos.actual],['Desvio',brl(variance),variance>=0?'Acima do previsto':'Abaixo do previsto',infos.variance],['Variação',pct(vpct),'Realizado x previsto',infos.variancePct],['Fornecedores',new Set([...p,...r].map(x=>x.supplier_key).filter(Boolean)).size,'No filtro atual',infos.suppliers]].map(x=>`<div class="kpi"><button class="info" data-tip="${esc(x[3])}">i</button><div class="label">${x[0]}</div><div class="value" title="${esc(x[1])}">${x[1]}</div><div class="sub">${x[2]}</div></div>`).join('');
+let biggest=[...sups].sort((a,b)=>Math.abs(b.d)-Math.abs(a.d))[0],sentence=`O realizado está <b>${vpct===null?'sem percentual calculável':Math.abs(vpct).toFixed(2).replace('.',',')+'%'}</b> ${vpct===null?'porque o previsto filtrado é zero':variance>=0?'acima do previsto':'abaixo do previsto'}, com desvio de <b>${brl(Math.abs(variance))}</b>.`;if(biggest)sentence+=` O maior desvio por fornecedor no filtro atual é <b>${esc(biggest.supplier)}</b>, em <b>${brl(biggest.d)}</b>.`;sentence+=pun.length?` A taxa de pagamentos antecipados ou dentro do prazo é <b>${pct(onrate)}</b>, calculada sobre ${pun.length} título(s) com as duas datas válidas.`:` A pontualidade <b>não foi calculada</b> neste filtro porque não há pagamento e vencimento válidos simultaneamente.`;el('summary').innerHTML=sentence;el('infoSummary').setAttribute('data-tip',infos.classification+' '+infos.variance+' '+infos.punctuality);
+el('chartCategory').innerHTML=categoryColumns(p,r);el('chartMonthlySupplier').innerHTML=monthlySupplierCategoryChart(p,r);el('chartSupplier').innerHTML=lollipop(sups);el('chartContribution').innerHTML=waterfall(p,r);
+el('supplierRows').innerHTML=sups.sort((a,b)=>Math.abs(b.d)-Math.abs(a.d)).map(x=>`<tr><td>${esc(x.supplier)}</td><td>${esc(x.category)}</td><td>${esc(x.flow)}</td><td class="num">${brl(x.p)}</td><td class="num">${brl(x.r)}</td><td class="num ${x.d>=0?'positive':'negative'}">${brl(x.d)}</td><td class="num">${pct(x.v)}</td></tr>`).join('');
+el('titleRows').innerHTML=r.map(x=>`<tr><td class="source">${esc(x.source_file)} • ${esc(x.source_sheet)}</td><td>${x.source_row||'—'}</td><td>${esc(x.title)}</td><td>${esc(x.supplier)}</td><td>${esc(x.category)}</td><td>${x.date?new Date(x.date+'T00:00:00').toLocaleDateString('pt-BR'):'—'}</td><td>${x.due_date?new Date(x.due_date+'T00:00:00').toLocaleDateString('pt-BR'):'—'}</td><td>${esc(x.punctuality)}</td><td class="num">${brl(x.value)}</td></tr>`).join('')}
+function reportMonths(items=ALL_ITEMS){return [...new Set(items.map(x=>x.date?String(x.date).slice(0,7):'').filter(Boolean))].sort()}
+function updateMonthFilterLabel(){const label=el('monthFilterLabel');label.textContent=state.months.length?state.months.length===1?monthLabel(state.months[0]+'-01',true):`${state.months.length} meses`:'Todos'}
+function refreshMonthFilterOptions(){const eligible=ALL_ITEMS.filter(pass),months=reportMonths(eligible),multiYear=new Set(months.map(x=>x.slice(0,4))).size>1,allowed=new Set(months),box=el('monthFilterOptions');state.months=state.months.filter(m=>allowed.has(m));const selected=new Set(state.months);box.innerHTML=months.map(m=>`<label><input type="checkbox" value="${m}"${selected.has(m)?' checked':''}><span>${monthLabel(m+'-01',multiYear)}</span></label>`).join('');updateMonthFilterLabel()}
+function buildMonthFilter(){const box=el('monthFilterOptions');box.addEventListener('change',e=>{if(!(e.target instanceof HTMLInputElement))return;state.months=[...box.querySelectorAll('input:checked')].map(x=>x.value);updateMonthFilterLabel();render()});el('clearMonthFilter').addEventListener('click',()=>{state.months=[];refreshMonthFilterOptions();render();el('monthFilter').open=false})}
+function currentFilterSummary(){let parts=[];if(state.category.length)parts.push(`Categoria: ${state.category.join(', ')}`);if(state.flow.length)parts.push(`Fluxo JMM: ${state.flow.join(', ')}`);if(state.supplier.length)parts.push(`Fornecedor: ${state.supplier.join(', ')}`);if(state.emission.length)parts.push(`${state.emissionMode==='date'?'Emissão/Competência (data)':'Emissão/Competência (mês/ano)'}: ${state.emission.map(v=>emissionOptionLabel(v)).join(', ')}`);if(state.search.trim())parts.push(`Pesquisa: ${state.search.trim()}`);if(state.months.length)parts.push(`Mês somente na visão mensal: ${state.months.map(m=>monthLabel(m+'-01',true)).join(', ')}`);return parts.length?parts.join(' • '):'Filtros: padrões iniciais (todos os dados)'}
+function updatePrintFilterSummary(){el('printFilterSummary').textContent='Filtros aplicados neste PDF: '+currentFilterSummary()}
+function preparePrint(){updatePrintFilterSummary();fitReportValues()}function restoreAfterPrint(){}
+window.addEventListener('beforeprint',preparePrint);window.addEventListener('afterprint',restoreAfterPrint);
+el('printFilteredPdf').addEventListener('click',()=>{preparePrint();setTimeout(()=>window.print(),30)});
+function syncStateFromFilterControls(){state.category=[...el('mfCategoryOptions').querySelectorAll('input:checked')].map(x=>x.value);state.flow=[...el('mfFlowOptions').querySelectorAll('input:checked')].map(x=>x.value);state.supplier=[...el('mfSupplierOptions').querySelectorAll('input:checked')].map(x=>x.value);let mode=el('mfEmission').querySelector('input[name="emissionMode"]:checked');state.emissionMode=mode&&mode.value==='date'?'date':'month';state.emission=[...el('mfEmissionOptions').querySelectorAll('input:checked')].map(x=>x.value);state.search=el('fSearch').value.trim();state.months=[...el('monthFilterOptions').querySelectorAll('input:checked')].map(x=>x.value)}
+function resetAllFilters(){state.category=[];state.flow=[];state.supplier=[];state.emissionMode='month';state.emission=[];state.search='';state.months=[];let emissionMonth=el('mfEmission').querySelector('input[name="emissionMode"][value="month"]');if(emissionMonth)emissionMonth.checked=true;el('fSearch').value='';document.querySelectorAll('details.multiFilter,details.monthFilter').forEach(d=>d.open=false);applyFiltersNow()}
+el('fSearch').addEventListener('input',e=>{state.search=e.target.value.trim();applyFiltersNow()});
+el('applyFilters').addEventListener('click',()=>{syncStateFromFilterControls();applyFiltersNow();document.querySelectorAll('details.multiFilter').forEach(d=>d.open=false)});
+el('clearFilters').addEventListener('click',resetAllFilters);buildEmissionFilter();buildMonthFilter();refreshFilterOptions();
+function fitWithin(node,minSize){node.style.fontSize='';node.style.maxWidth='';node.style.transform='';node.style.transformOrigin='';node.style.letterSpacing='';let parent=node.parentElement;if(!parent||!parent.clientWidth)return;let size=parseFloat(getComputedStyle(node).fontSize)||12,available;if(node.closest('.kpi')){let ps=getComputedStyle(parent);available=Math.max(40,parent.clientWidth-(parseFloat(ps.paddingLeft)||0)-(parseFloat(ps.paddingRight)||0))}else{let ps=getComputedStyle(parent);available=Math.max(40,parent.clientWidth-(parseFloat(ps.paddingLeft)||0)-(parseFloat(ps.paddingRight)||0))}node.style.display='block';node.style.maxWidth=available+'px';let guard=0;while(node.scrollWidth>available+1&&size>minSize&&guard++<70){size-=.3;node.style.fontSize=size+'px'}if(node.scrollWidth>available+1){node.style.letterSpacing='-.035em';let ratio=Math.max(.78,Math.min(1,available/node.scrollWidth));node.style.transform=`scaleX(${ratio})`;node.style.transformOrigin='left center'}}
+function fitReportValues(){document.querySelectorAll('.kpi .value,.monthMetricHead b,.monthOverview b,.monthMiniCard__delta b,.monthComparison__grid b').forEach(n=>fitWithin(n,n.closest('.kpi')?8.8:8.2))}
+function fitMonthlyViewport(){const chart=el('chartMonthlySupplier');if(!chart||matchMedia('print').matches)return;const blocks=[...chart.querySelectorAll('.monthBlock')].slice(0,3);if(!blocks.length){chart.style.maxHeight='';return}const total=blocks.reduce((sum,b)=>sum+b.getBoundingClientRect().height,0)+28;const maxViewport=1040;chart.style.maxHeight=Math.ceil(Math.min(total,maxViewport))+'px'}
+
+const infoTip=el('globalInfoTip');let activeInfo=null;function showInfoTip(target){let text=target.getAttribute('data-tip');if(!text)return;activeInfo=target;infoTip.textContent=text;infoTip.style.display='block';infoTip.style.left='12px';infoTip.style.top='12px';requestAnimationFrame(()=>{if(activeInfo!==target)return;let r=target.getBoundingClientRect(),tw=infoTip.offsetWidth,th=infoTip.offsetHeight,left=r.right+10,top=r.top-5;if(left+tw>innerWidth-12)left=Math.max(12,r.left-tw-10);if(top+th>innerHeight-12)top=Math.max(12,innerHeight-th-12);infoTip.style.left=left+'px';infoTip.style.top=top+'px'})}function hideInfoTip(){activeInfo=null;infoTip.style.display='none'}
+document.addEventListener('pointerover',e=>{let t=e.target.closest&&e.target.closest('.info[data-tip]');if(t)showInfoTip(t)});document.addEventListener('pointerout',e=>{let t=e.target.closest&&e.target.closest('.info[data-tip]');if(t&&!t.contains(e.relatedTarget))hideInfoTip()});document.addEventListener('focusin',e=>{let t=e.target.closest&&e.target.closest('.info[data-tip]');if(t)showInfoTip(t)});document.addEventListener('focusout',e=>{if(e.target.closest&&e.target.closest('.info[data-tip]'))hideInfoTip()});window.addEventListener('scroll',hideInfoTip,true);window.addEventListener('resize',()=>{hideInfoTip();fitReportValues();fitMonthlyViewport()});
+const baseRender=render;render=function(){baseRender();requestAnimationFrame(()=>{fitReportValues();fitMonthlyViewport();updatePrintFilterSummary()})};render();
+</script>
+</body></html>
