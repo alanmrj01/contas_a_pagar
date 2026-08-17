@@ -2,10 +2,21 @@ services:
   - type: web
     name: contas-a-pagar-web
     runtime: python
-    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: sh start.sh
     healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION
-        value: 3.13.1
+        value: "3.13.1"
+      - key: WEB_SESSION_TTL_SECONDS
+        value: "7200"
+      - key: MAX_UPLOAD_BYTES
+        value: "209715200"
+      - key: UPLOAD_CHUNK_BYTES
+        value: "16777216"
+      - key: MAX_SESSION_STAGED_BYTES
+        value: "2147483648"
+      - key: MAX_OFFICE_EXPANDED_BYTES
+        value: "2147483648"
+      - key: MAX_HEAVY_JOBS
+        value: "1"

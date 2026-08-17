@@ -35,7 +35,7 @@ echo.
 echo Acesse: http://127.0.0.1:8000
 echo Para encerrar, pressione CTRL+C nesta janela.
 echo.
-".venv\Scripts\python.exe" -m uvicorn main:app --host 127.0.0.1 --port 8000
+".venv\Scripts\python.exe" -m uvicorn main:app --host 127.0.0.1 --port 8000 --no-server-header
 exit /b %errorlevel%
 
 :error

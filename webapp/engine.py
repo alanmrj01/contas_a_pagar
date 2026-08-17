@@ -14,6 +14,7 @@ from app.services.report_generator import generate_report
 from app.services.sheet_detector import InputDetection, detect_base_table, detect_input_tables
 from app.services.validation_service import ValidatedInput
 
+from .report_optimizer import optimize_report_file
 from .session_store import SessionStore
 
 
@@ -33,12 +34,13 @@ class WebEngine:
         self.default_base = self.project_root / "resources" / "base_dados_padrao.xlsx"
 
     def active_base(self, sid: str) -> BaseView:
-        custom = self.store.custom_base_path(sid)
-        path = custom if custom.exists() else self.default_base
-        wb = read_excel(path)
+        state = self.store.state(sid)
+        if state.custom_base_table is not None:
+            return BaseView(path=Path("BASE_DADOS_SESSAO.xlsx"), table=state.custom_base_table, is_custom=True)
+        wb = read_excel(self.default_base)
         table = detect_base_table(wb)
         validate_base(table)
-        return BaseView(path=path, table=table, is_custom=custom.exists())
+        return BaseView(path=self.default_base, table=table, is_custom=False)
 
     def base_info(self, sid: str) -> dict[str, Any]:
         base = self.active_base(sid)
@@ -71,24 +73,26 @@ class WebEngine:
         wb = read_excel(uploaded_path)
         table = detect_base_table(wb)
         validate_base(table)
-        dest = self.store.custom_base_path(sid)
-        tmp = dest.with_suffix(".tmp.xlsx")
+
+        # Mantém a mesma serialização/segunda leitura de segurança da versão web
+        # anterior, mas sem persistir a base personalizada em plaintext no disco.
+        verify_dir = self.store.new_work_dir(sid, "base_verify")
+        tmp = verify_dir / "base_dados_validada.xlsx"
         try:
             _write_base_xlsx(table, tmp)
-            # Reabre antes de substituir, exatamente para não destruir uma base
-            # anterior válida se o arquivo persistido não puder ser relido.
             persisted_wb = read_excel(tmp)
             persisted_table = detect_base_table(persisted_wb)
             validate_base(persisted_table)
-            tmp.replace(dest)
+            self.store.state(sid).custom_base_table = persisted_table
         finally:
-            tmp.unlink(missing_ok=True)
+            shutil.rmtree(verify_dir, ignore_errors=True)
         self.store.invalidate_validation(sid, preserve_last_outputs=True)
         return self.base_info(sid)
 
     def export_base(self, sid: str) -> Path:
         table = self.active_base(sid).table
-        dest = self.store.export_base_path(sid)
+        work = self.store.new_work_dir(sid, "base_export")
+        dest = work / "BASE_DADOS.xlsx"
         _write_base_xlsx(table, dest)
         return dest
 
@@ -157,18 +161,17 @@ class WebEngine:
         if validated is None:
             raise RuntimeError("Valide os arquivos antes de gerar o relatório.")
 
-        output_dir = self.store.report_dir(sid)
-        if output_dir.exists():
-            shutil.rmtree(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = self.store.new_report_staging(sid)
+        try:
+            report = generate_report(validated.result, output_dir, [p.name for p in validated.paths])
+            pdf = output_dir / "Relatorio_Contas_a_Pagar.pdf"
+            if not report.exists() or not pdf.exists():
+                raise RuntimeError("A geração terminou sem produzir todos os arquivos esperados.")
 
-        report = generate_report(validated.result, output_dir, [p.name for p in validated.paths])
-        pdf = output_dir / "Relatorio_Contas_a_Pagar.pdf"
-        if not report.exists() or not pdf.exists():
-            raise RuntimeError("A geração terminou sem produzir todos os arquivos esperados.")
+            script_hashes = optimize_report_file(report)
+            self.store.replace_report_artifacts(sid, output_dir, script_hashes)
+        except Exception:
+            shutil.rmtree(output_dir, ignore_errors=True)
+            raise
 
-        report_url = f"/generated/{sid}/current/index.html"
-        pdf_url = f"/generated/{sid}/current/Relatorio_Contas_a_Pagar.pdf"
-        state.last_report_url = report_url
-        state.last_pdf_url = pdf_url
-        return {"report_url": report_url, "pdf_url": pdf_url}
+        return {"report_url": "/report/current", "pdf_url": "/report/Relatorio_Contas_a_Pagar.pdf"}

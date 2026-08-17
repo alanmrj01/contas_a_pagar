@@ -1,0 +1,46 @@
+CONTAS A PAGAR WEB 2.0.2.0 - VALIDACAO FINAL DA EDICAO SEGURA
+===================================================================
+
+BASELINE COMPARADA
+------------------
+Arquivo de origem enviado pelo usuario: ContasAPagar_Web_2.0.2_COMPLETO.zip
+
+PROTECAO CONTRA REGRESSOES
+--------------------------
+Arquivos funcionais/visuais protegidos comparados byte a byte: 20
+Resultado: 0 alteracoes nos arquivos protegidos.
+
+Inclui todo o diretorio app/ do baseline, o template/tela visual, CSS e recursos criticos.
+Os 13 itens do docs/CORE_PARITY_SHA256.json tambem conferem com os hashes esperados.
+
+TESTES DA EDICAO SEGURA
+-----------------------
+- Python compileall: OK
+- JavaScript node --check: OK
+- pytest: 51/51 aprovados
+- Session isolation: OK
+- CSRF / Origin: OK
+- AES-256-GCM artifact roundtrip e integridade: OK
+- Upload criptografado adulterado rejeitado: OK
+- Rotas de relatorio privadas por sessao: OK
+- Limite protocolar de 200 MB por arquivo: OK
+- TTL/limpeza de sessao: OK
+- Base padrao sem rota publica: OK
+- Artefatos em repouso em formato protegido .capenc: OK
+- Paridade dos arquivos criticos: OK
+
+DEPLOY
+------
+- start.sh: sintaxe POSIX validada
+- Uvicorn configurado para 0.0.0.0:$PORT, 1 worker
+- render.yaml mantem build via requirements.txt e explicita os defaults de seguranca
+- Nenhum segredo/chave privada de runtime e persistido no repositorio
+
+OBSERVACAO DE TESTE
+-------------------
+O ambiente local desta validacao nao possuia o pacote python-calamine instalado e
+nao tinha acesso de rede para instala-lo. Os testes XLSX foram executados com um
+adaptador de teste externo ao projeto, baseado em openpyxl, apenas para exercitar
+os contratos do motor durante a validacao local. Esse adaptador NAO faz parte da
+entrega. Em producao, requirements.txt continua exigindo python-calamine==0.5.3,
+como no projeto funcional original.

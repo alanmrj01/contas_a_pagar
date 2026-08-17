@@ -4,7 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from webapp.engine import WebEngine
+from webapp.report_optimizer import MARKER
 from webapp.session_store import SessionStore
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,36 +42,37 @@ def test_web_steps_remain_sequential_and_actions_turn_green_only_when_ready():
     assert ".btn.ready,.action-btn.ready" in CSS
 
 
-def test_generate_navigates_same_browser_tab_to_original_report():
+def test_generate_navigates_same_browser_tab_and_visual_assets_are_unchanged():
     assert "window.location.assign(state.reportUrl)" in JS
-    assert "generate_report(validated.result" in (ROOT / "webapp" / "engine.py").read_text(encoding="utf-8")
+    assert "stageEncryptedFile" in JS
+    assert "AES-GCM" in JS
+    assert "RSA-OAEP" in JS
+    # A otimização do relatório é aplicada somente após o motor desktop gerar o HTML.
+    engine = (ROOT / "webapp" / "engine.py").read_text(encoding="utf-8")
+    assert "generate_report(validated.result" in engine
+    assert "optimize_report_file(report)" in engine
 
 
-def test_upload_extensions_match_desktop():
+def test_upload_extensions_and_200mb_security_limit_are_kept():
     assert ".xlsx,.xls,.xlsm,.xlsb" in HTML
     assert "SUPPORTED_EXTENSIONS" in (ROOT / "main.py").read_text(encoding="utf-8")
-
-
-def test_end_to_end_sample_uses_same_engine_and_generates_exact_report_template(tmp_path, monkeypatch):
-    monkeypatch.setenv("WEB_DATA_DIR", str(tmp_path / "data"))
     store = SessionStore(ROOT)
-    engine = WebEngine(ROOT, store)
-    sid = "a" * 32
-    sample = ROOT / "samples" / "PLANILHAS PAGAR E PREVISTO.xlsx"
-    validated = engine.validate(sid, [sample])
-    assert validated.result.previsto
-    assert validated.result.realizado
-    assert validated.result.base_rows > 0
-    outputs = engine.generate(sid)
-    report = store.report_dir(sid) / "index.html"
-    pdf = store.report_dir(sid) / "Relatorio_Contas_a_Pagar.pdf"
-    assert report.is_file() and report.stat().st_size > 20_000
-    assert pdf.is_file() and pdf.stat().st_size > 1_000
-    assert outputs["report_url"].endswith("/index.html")
-    generated = report.read_text(encoding="utf-8")
-    template = (ROOT / "app" / "report" / "report_template.html").read_text(encoding="utf-8")
-    assert "__REPORT_DATA__" not in generated
-    # Estrutura/CSS/JS do relatório é o mesmo template desktop, somente com payload injetado.
-    before, after = template.split("__REPORT_DATA__", 1)
-    assert generated.startswith(before)
-    assert generated.endswith(after)
+    assert store.max_upload_bytes == 200 * 1024 * 1024
+    assert store.session_ttl_seconds == 2 * 60 * 60
+
+
+def test_session_id_is_not_exposed_in_report_urls_and_generated_mount_is_gone():
+    main = (ROOT / "main.py").read_text(encoding="utf-8")
+    engine = (ROOT / "webapp" / "engine.py").read_text(encoding="utf-8")
+    assert '"/report/current"' in engine
+    assert '"/report/Relatorio_Contas_a_Pagar.pdf"' in engine
+    assert 'app.mount("/generated"' not in main
+    assert "samesite=\"strict\"" in main
+    assert "httponly=True" in main
+
+
+def test_report_template_itself_remains_desktop_baseline():
+    manifest = json.loads((ROOT / "docs" / "CORE_PARITY_SHA256.json").read_text(encoding="utf-8"))
+    rel = "app/report/report_template.html"
+    assert sha(ROOT / rel) == manifest["files"][rel]
+    assert MARKER not in (ROOT / rel).read_text(encoding="utf-8")

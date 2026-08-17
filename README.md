@@ -1,57 +1,100 @@
 # Contas a Pagar Web 2.0.2.0
 
-Migração web da versão desktop 2.0.2, preservando o núcleo determinístico e o relatório final.
+Versão web do Contas a Pagar 2.0.2.0. O núcleo determinístico de leitura, detecção de layout, normalização, classificação, reconciliação, métricas, PDF, Excel e o template do relatório permanecem preservados. As alterações desta edição são exclusivamente de segurança da aplicação web, isolamento de sessão e desempenho do relatório no navegador.
 
-## Fluxo
-1. Adicionar um ou mais arquivos financeiros (.xlsx, .xls, .xlsm, .xlsb).
-2. Validar arquivo com o mesmo motor de detecção, normalização, classificação e reconciliação.
-3. Gerar relatório. A aba atual navega para o mesmo relatório HTML usado pela versão desktop, com os mesmos temas, filtros, gráficos, cards, cálculos e exportações.
+## Fluxo funcional preservado
+1. Adicionar um ou mais arquivos financeiros (`.xlsx`, `.xls`, `.xlsm`, `.xlsb`).
+2. Validar os arquivos com o mesmo motor determinístico da versão de referência.
+3. Gerar o relatório. A aba atual navega para o relatório com os mesmos temas, filtros, gráficos, cards, cálculos e exportações.
 
-A Base de Dados continua separada e pode ser consultada, exportada e substituída. Bases personalizadas ficam isoladas por sessão do navegador.
+A BASE DADOS continua separada, podendo ser consultada, exportada e substituída durante a sessão. Uma base personalizada não é compartilhada entre sessões.
+
+## Segurança da edição web
+
+### Sessão anônima e temporária
+- Não existe cadastro, login ou senha dentro da ferramenta.
+- Cada navegador recebe um token de sessão criptograficamente aleatório em cookie `HttpOnly`, `Secure` em HTTPS e `SameSite=Strict`.
+- O token bruto não é usado como nome de pasta; o servidor usa seu SHA-256 como identificador interno.
+- O ID da sessão não aparece na URL.
+- A sessão expira após **2 horas de inatividade** e seus arquivos/artefatos temporários são destruídos pela própria aplicação.
+
+### Upload protegido
+- Limite funcional: **200 MB por arquivo**.
+- O navegador gera uma chave AES-256-GCM exclusiva para cada upload.
+- Cada bloco da planilha é criptografado no navegador antes do envio.
+- A chave AES é embrulhada com RSA-OAEP/SHA-256 usando uma chave RSA efêmera criada no startup do servidor.
+- A chave privada RSA nunca é gravada no projeto, GitHub ou disco de sessão.
+- O upload ocorre em blocos de 16 MB para evitar carregar uma planilha grande inteira na memória do navegador/servidor de uma só vez.
+- Os blocos permanecem criptografados no armazenamento temporário.
+- A planilha só é materializada em plaintext durante o período mínimo necessário para o motor Python processá-la e é removida em seguida.
+- Arquivos Office são verificados quanto a estrutura, extensão suportada, tamanho, caminhos internos e expansão anormal antes de entrarem no motor.
+
+HTTPS/TLS continua obrigatório na hospedagem. A criptografia de aplicação é uma camada adicional e não substitui TLS.
+
+### Relatórios e artefatos
+- HTML, PDF e Excel não ficam em diretório público.
+- Os artefatos são criptografados temporariamente em repouso com AES-256-GCM e chave exclusiva da sessão mantida somente em memória.
+- `/report/current` e os downloads são entregues somente depois de o servidor validar a sessão correspondente.
+- As respostas financeiras usam `Cache-Control: no-store`.
+- A política CSP do relatório autoriza somente os hashes exatos dos scripts inline gerados pelo próprio relatório.
+
+### Proteções adicionais
+- CSRF token vinculado à sessão e validação de `Origin` para operações de escrita.
+- CSP, HSTS em HTTPS, `X-Content-Type-Options`, proteção contra framing, política restritiva de permissões e `Referrer-Policy`.
+- Limitador antiabuso deliberadamente generoso; não existe limite de relatórios por hora e o uso normal repetido não é restringido.
+- Processamentos pesados são serializados por padrão para reduzir risco de exaustão de RAM, sem limitar quantas vezes o usuário pode executar o fluxo.
+- Mensagens de erro são sanitizadas para não expor caminhos internos.
+- O servidor não registra conteúdo das planilhas, fornecedores, valores ou dados do relatório por código da aplicação.
+- Chaves de sessão e criptografia são efêmeras e não devem ser adicionadas ao GitHub.
+
+Mais detalhes: `docs/SEGURANCA_WEB_2.0.2.md`.
+
+## Desempenho do relatório
+O template visual original não foi modificado. Depois de o motor gerar o HTML, uma etapa web de otimização aplica somente melhorias de execução no navegador:
+- reutilização de formatadores de moeda, percentual e data;
+- índice de pesquisa pré-calculado por registro;
+- cache dos termos pesquisados;
+- debounce curto da pesquisa dinâmica;
+- resize de layout limitado a um frame por ciclo do navegador;
+- compressão HTTP para respostas textuais grandes.
+
+Não há mudança de gráfico, cor, tema, card, filtro, cálculo ou organização visual.
 
 ## Executar no Windows
 Execute `run_web.bat`. O script cria `.venv`, instala `requirements.txt`, inicia o FastAPI e abre `http://127.0.0.1:8000`.
 
-## Hospedagem
-O projeto é um único serviço FastAPI. Pode ser implantado em Render, Railway, Azure, AWS, servidor interno ou Docker.
+> Em HTTP local o cookie não usa a flag `Secure` para permitir desenvolvimento em `localhost`. Em produção HTTPS/Render ele é enviado como `Secure`.
 
-Render:
+## Render
+O projeto já contém `render.yaml` e `start.sh`.
+
 - Build: `pip install -r requirements.txt`
 - Start: `sh start.sh`
 - Health check: `/healthz`
+- Um worker por padrão. Não aumente o número de workers/instâncias sem migrar o estado de sessão para um armazenamento compartilhado seguro ou adotar afinidade de sessão.
 
-`render.yaml` e `Dockerfile` estão incluídos.
+As configurações de segurança possuem defaults seguros e não exigem segredos no Render. Variáveis opcionais estão documentadas em `.env.example`.
 
-## Persistência
-Por padrão, dados do servidor ficam em `runtime_data/`. Para um volume persistente, defina `WEB_DATA_DIR`.
+## Armazenamento
+Por padrão, os dados temporários ficam em `runtime_data/`, que está ignorado pelo Git. Não use disco persistente para sessões financeiras temporárias sem uma revisão específica de segurança.
 
-Os arquivos financeiros brutos enviados são apagados do diretório de upload após a validação. Os dados validados necessários à geração ficam em memória e as saídas HTML/PDF/Excel permanecem no diretório de relatórios.
+O filesystem efêmero do provedor não é usado como política de exclusão: a aplicação executa sua própria limpeza e expiração.
 
-## Segurança
-Na versão desktop, a planilha era processada no próprio computador. Em uma hospedagem web externa, o navegador precisa enviar a planilha ao servidor. Para dados corporativos, hospede a aplicação somente em infraestrutura aprovada pela organização.
-
-Cada navegador recebe um identificador aleatório em cookie HttpOnly. Uploads, base personalizada e relatórios são separados por sessão. Somente os relatórios gerados são servidos como arquivos públicos por URL de sessão aleatória.
-
-## Paridade com a versão desktop
-`docs/CORE_PARITY_SHA256.json` registra os SHA-256 dos módulos críticos copiados byte a byte da versão desktop 2.0.2, incluindo reconciliador, métricas, detector de layouts, normalização, PDF, Excel, base padrão e `app/report/report_template.html`.
+## Paridade com o motor original
+`docs/CORE_PARITY_SHA256.json` registra os SHA-256 dos módulos críticos preservados da versão de referência, incluindo reconciliador, métricas, detector de layouts, normalização, PDF, Excel, base padrão e `app/report/report_template.html`.
 
 ## Testes
-Instale `requirements-dev.txt` e execute `pytest -q`.
+Instale `requirements-dev.txt` e execute:
 
-A entrega foi validada com:
-- compileall Python;
-- `node --check` no JavaScript;
-- 43/43 testes aprovados;
-- teste ponta a ponta com a planilha de amostra: validação, geração do HTML, PDF e downloads;
-- verificação SHA-256 dos arquivos críticos.
+```bash
+pytest -q
+```
 
-## Arquivos principais
-- `main.py`: API/servidor web.
-- `webapp/engine.py`: adaptador web para o motor original.
-- `webapp/templates/index.html`: tela inicial em três etapas.
-- `webapp/static/`: interface web.
-- `app/services/`: lógica determinística preservada.
-- `app/report/report_template.html`: relatório final preservado.
-- `resources/base_dados_padrao.xlsx`: base padrão preservada.
+A validação desta edição inclui compilação Python, sintaxe JavaScript, testes de criptografia/integridade, isolamento entre sessões, CSRF, limite de 200 MB, artefatos privados criptografados, expiração de sessão, geração HTML/PDF/Excel e paridade SHA-256 do núcleo protegido.
+
+## Atenção antes de publicar o repositório
+O projeto contém `resources/base_dados_padrao.xlsx`, porque ela faz parte da classificação determinística existente. Se essa base tiver informações internas da organização, o repositório deve permanecer **privado**.
+
+A planilha em `samples/` desta entrega foi substituída por uma amostra sintética. Caso uma versão anterior com dados reais tenha sido enviada a um repositório público, apagar o arquivo em um commit novo não remove o conteúdo do histórico do Git; o histórico deve ser higienizado separadamente.
 
 DataTech - AMRJ

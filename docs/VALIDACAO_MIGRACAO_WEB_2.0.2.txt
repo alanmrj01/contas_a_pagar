@@ -1,27 +1,60 @@
-CONTAS A PAGAR WEB 2.0.2.0 - VALIDACAO DA MIGRACAO
-====================================================
+CONTAS A PAGAR WEB 2.0.2.0 - VALIDACAO DA EDICAO SEGURA/OTIMIZADA
+====================================================================
 
-Base de referencia: ContasAPagar_2.0.2_EDICAO_CORPORATE_TI_BUILD_CORRIGIDO
+Base funcional: ContasAPagar Web 2.0.2.0
 
-Escopo protegido e preservado:
+ESCOPO FUNCIONAL PROTEGIDO
+--------------------------
 - leitura e normalizacao;
 - deteccao de layouts;
 - separacao PREVISTO/REALIZADO;
 - classificacao pela BASE DADOS;
 - reconciliacao;
 - metricas e agregacoes;
-- Excel e PDF;
-- template HTML final do relatorio.
+- geracao Excel e PDF;
+- app/report/report_template.html;
+- graficos, cores, temas, filtros, cards e fluxo visual.
 
-Mudanca arquitetural: somente a interface/orquestracao foi migrada de PySide6 para navegador + FastAPI.
+ALTERACOES CIRURGICAS DESTA EDICAO
+----------------------------------
+- sessao anonima isolada por cookie seguro;
+- 2 horas de inatividade antes da expiracao;
+- token bruto nao exposto em URL;
+- CSRF + validacao de Origin;
+- upload em chunks e criptografia AES-256-GCM no navegador;
+- RSA-OAEP/SHA-256 efemero para transporte da chave de upload;
+- limite funcional de 200 MB por planilha;
+- validacao estrutural de arquivos Office e protecao contra expansao anormal;
+- plaintext de upload removido apos o processamento;
+- HTML/PDF/Excel criptografados em repouso por sessao;
+- artefatos servidos somente por rotas privadas vinculadas ao cookie;
+- Cache-Control no-store e security headers;
+- rate limit apenas antiabuso, sem cota de relatorios por hora;
+- limite de concorrencia para tarefas pesadas;
+- otimizacoes de JavaScript aplicadas somente ao HTML web gerado, sem alterar o template fonte.
 
-Ao gerar, a aba atual navega para o index.html produzido pelo mesmo app.services.report_generator.generate_report da versao desktop.
-
-Validacoes executadas:
+VALIDACOES EXECUTADAS DURANTE O DESENVOLVIMENTO
+-----------------------------------------------
 - compileall Python: OK
-- sintaxe JavaScript: OK
-- pytest: 43/43 aprovados
-- ponta a ponta com planilha de amostra: OK
-- paridade SHA-256 dos arquivos criticos: OK
+- sintaxe JavaScript (node --check): OK
+- pytest: 51/51 aprovados
+- criptografia AES-GCM de artefatos: roundtrip e adulteracao: OK
+- expiracao/limpeza de sessao: OK
+- isolamento entre duas sessoes: OK
+- CSRF: OK
+- limite de 200 MB no protocolo de upload: OK
+- upload criptografado adulterado rejeitado antes do motor: OK
+- relatorio/PDF acessiveis apenas pela sessao proprietaria: OK
+- base padrao sem rota publica: OK
+- artefatos em disco apenas no formato protegido .capenc: OK
+- compatibilidade WebCrypto (AES-GCM + RSA-OAEP) navegador-equivalente -> Python: OK
+- geracao HTML/PDF/Excel: OK
+- paridade SHA-256 dos arquivos criticos do motor/template: OK
 
-Observacao: em hospedagem externa, os arquivos precisam ser enviados ao servidor. Os brutos sao removidos apos a validacao. Para dados corporativos, use infraestrutura aprovada pela organizacao.
+OBSERVACAO DE SEGURANCA
+-----------------------
+HTTPS/TLS e a criptografia de aplicacao protegem os dados em transito e reduzem
+exposicao em repouso. O motor Python precisa acessar plaintext por um periodo
+transitorio para interpretar e processar os dados. Esta solucao nao afirma
+criptografia homomorfica nem invulnerabilidade em caso de comprometimento total
+do processo do servidor.

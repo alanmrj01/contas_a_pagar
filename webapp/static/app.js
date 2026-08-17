@@ -13,6 +13,8 @@
     spinnerTimer: null,
     spinnerIndex: 0,
     pendingBaseFile: null,
+    security: null,
+    serverPublicKey: null,
   };
   const spinnerFrames = ['◜','◝','◞','◟'];
 
@@ -30,14 +32,112 @@
     el('messageDialog').showModal();
   }
 
+  const textEncoder = new TextEncoder();
+
+  function toBase64(value) {
+    const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  }
+
+  async function ensureSecurity(force = false) {
+    if (!force && state.security && state.serverPublicKey) return state.security;
+    if (!window.crypto || !window.crypto.subtle) {
+      throw new Error('Este navegador não oferece os recursos criptográficos necessários. Use uma versão atual do Edge, Chrome ou Firefox.');
+    }
+    const response = await fetch('/api/security/bootstrap', {credentials:'same-origin', cache:'no-store'});
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.detail || `Falha HTTP ${response.status}`);
+    state.security = payload;
+    state.serverPublicKey = await crypto.subtle.importKey(
+      'jwk', payload.public_key_jwk,
+      {name:'RSA-OAEP', hash:'SHA-256'}, false, ['encrypt']
+    );
+    return payload;
+  }
+
   async function api(url, options = {}) {
-    const response = await fetch(url, {credentials:'same-origin', ...options});
+    const method = String(options.method || 'GET').toUpperCase();
+    const headers = new Headers(options.headers || {});
+    if (['POST','PUT','PATCH','DELETE'].includes(method)) {
+      await ensureSecurity();
+      headers.set('X-CSRF-Token', state.security.csrf_token);
+    }
+    const response = await fetch(url, {credentials:'same-origin', cache:'no-store', ...options, headers});
     let payload = null;
     try { payload = await response.json(); } catch (_) { payload = null; }
     if (!response.ok) {
+      if (response.status === 403) {
+        state.security = null;
+        state.serverPublicKey = null;
+      }
       throw new Error((payload && payload.detail) || `Falha HTTP ${response.status}`);
     }
     return payload;
+  }
+
+  async function discardUploads(uploadIds) {
+    if (!uploadIds || !uploadIds.length) return;
+    try {
+      await api('/api/uploads/discard', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({upload_ids:uploadIds}),
+      });
+    } catch (_) {}
+  }
+
+  async function stageEncryptedFile(file, purpose = 'financial') {
+    const securityInfo = await ensureSecurity();
+    if (file.size > securityInfo.max_upload_bytes) {
+      throw new Error(`O arquivo ${file.name} excede o limite de ${Math.round(securityInfo.max_upload_bytes / 1024 / 1024)} MB por planilha.`);
+    }
+    const aesKey = await crypto.subtle.generateKey({name:'AES-GCM', length:256}, true, ['encrypt']);
+    const rawKey = await crypto.subtle.exportKey('raw', aesKey);
+    const wrappedKey = await crypto.subtle.encrypt({name:'RSA-OAEP'}, state.serverPublicKey, rawKey);
+    let uploadId = '';
+    try {
+      const init = await api('/api/uploads/init', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          filename:file.name,
+          size:file.size,
+          purpose,
+          encrypted_key:toBase64(wrappedKey),
+        }),
+      });
+      uploadId = init.upload_id;
+      const chunkBytes = Number(init.chunk_bytes) || securityInfo.upload_chunk_bytes;
+      const totalChunks = Number(init.total_chunks) || Math.ceil(file.size / chunkBytes);
+      for (let index = 0; index < totalChunks; index += 1) {
+        const start = index * chunkBytes;
+        const end = Math.min(file.size, start + chunkBytes);
+        const plain = await file.slice(start, end).arrayBuffer();
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const aad = textEncoder.encode(`cap-upload-v1|${uploadId}|${index}|${plain.byteLength}`);
+        const cipher = await crypto.subtle.encrypt(
+          {name:'AES-GCM', iv, additionalData:aad, tagLength:128}, aesKey, plain
+        );
+        await api(`/api/uploads/${uploadId}/chunk/${index}`, {
+          method:'POST',
+          headers:{
+            'Content-Type':'application/octet-stream',
+            'X-Chunk-IV':toBase64(iv),
+            'X-Plain-Size':String(plain.byteLength),
+          },
+          body:cipher,
+        });
+        // Libera o event loop entre blocos para manter a interface responsiva.
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      await api(`/api/uploads/${uploadId}/complete`, {method:'POST'});
+      return uploadId;
+    } catch (error) {
+      if (uploadId) await discardUploads([uploadId]);
+      throw error;
+    }
   }
 
   function setAnalysis(badge, message) {
@@ -163,15 +263,21 @@
     setBusy(true);
     setAnalysis('ANALISANDO', 'Lendo os arquivos e conferindo estrutura, valores, datas e classificação. Nenhuma informação é alterada durante esta etapa.');
     el('analysisDetails').innerHTML = '';
-    const form = new FormData();
-    state.files.forEach(file => form.append('files', file, file.name));
+    const staged = [];
     try {
+      setAnalysis('ANALISANDO', 'Protegendo o envio e identificando o formato financeiro com segurança...');
+      for (const file of state.files) staged.push(await stageEncryptedFile(file, 'financial'));
       setAnalysis('ANALISANDO', 'Identificando o formato financeiro e separando PREVISTO/REALIZADO com segurança...');
-      const result = await api('/api/validate', {method:'POST', body:form});
+      const result = await api('/api/validate', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({upload_ids:staged}),
+      });
       renderValidation(result.summary);
       state.validated = true;
       setAnalysis('VALIDADO', 'Validação concluída. Revise o resumo abaixo; se estiver de acordo, o botão Gerar relatório já está liberado.');
     } catch (error) {
+      await discardUploads(staged);
       state.validated = false;
       setAnalysis('ATENÇÃO', 'A automação interrompeu a etapa para evitar gerar um relatório com dados possivelmente incorretos.');
       el('analysisDetails').innerHTML = `<div><p><b class="danger">O que aconteceu</b></p><p>${esc(error.message)}</p><p style="color:#b9cad7">Revise a mensagem acima e corrija somente o ponto indicado. Os arquivos originais e a BASE DADOS foram preservados.</p></div>`;
@@ -204,6 +310,7 @@
 
   async function loadState() {
     try {
+      await ensureSecurity();
       const result = await api('/api/state');
       el('baseInfo').textContent = `BASE DADOS ativa: ${result.base.rows} registros • ${result.base.origin}`;
       state.validated = !!result.validated;
@@ -233,15 +340,20 @@
   }
 
   async function importBase(file) {
-    const form = new FormData();
-    form.append('file', file, file.name);
+    let uploadId = '';
     try {
-      const result = await api('/api/base/import', {method:'POST', body:form});
+      uploadId = await stageEncryptedFile(file, 'base');
+      const result = await api('/api/base/import', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({upload_id:uploadId}),
+      });
       el('baseInfo').textContent = `BASE DADOS ativa: ${result.base.rows} registros • ${result.base.origin}`;
       invalidateValidation('BASE DADOS alterada. Valide novamente os arquivos antes de gerar o relatório.');
       await openBaseDialogRefresh();
       showMessage('Base atualizada', `Nova BASE DADOS validada e salva com ${result.base.rows} registros.`);
     } catch (error) {
+      if (uploadId) await discardUploads([uploadId]);
       showMessage('Base recusada', error.message);
     }
   }
