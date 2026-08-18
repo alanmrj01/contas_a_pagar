@@ -31,13 +31,16 @@ ALTERACOES CIRURGICAS DESTA EDICAO
 - Cache-Control no-store e security headers;
 - rate limit apenas antiabuso, sem cota de relatorios por hora;
 - limite de concorrencia para tarefas pesadas;
-- otimizacoes de JavaScript aplicadas somente ao HTML web gerado, sem alterar o template fonte.
+- otimizacoes de JavaScript aplicadas somente ao HTML web gerado, sem alterar o template fonte;
+- suporte determinístico ao par Valor/Valor2 no consolidado, mantendo Situação FC como chave de separação;
+- fallback amigável para arquivo sem permissão de leitura, com limpeza automática da seleção sem recarregar a página;
+- mensagens de erro organizadas em 3 passos para usuários leigos.
 
 VALIDACOES EXECUTADAS DURANTE O DESENVOLVIMENTO
 -----------------------------------------------
 - compileall Python: OK
 - sintaxe JavaScript (node --check): OK
-- pytest: 51/51 aprovados
+- pytest: 54/54 aprovados
 - criptografia AES-GCM de artefatos: roundtrip e adulteracao: OK
 - expiracao/limpeza de sessao: OK
 - isolamento entre duas sessoes: OK

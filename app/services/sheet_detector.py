@@ -54,22 +54,44 @@ def _has_all(table: TableData, aliases: list[tuple[str, ...]]) -> bool:
     return all(find_column(table, *group) is not None for group in aliases)
 
 
-def _is_consolidated_fc(table: TableData) -> bool:
-    """Reconhece apenas o layout consolidado quando todos os campos-chave existem.
+def _consolidated_value_columns(table: TableData) -> tuple[str, str, str] | None:
+    """Resolve, de forma determinística, o par de colunas monetárias do consolidado.
 
-    A regra é deliberadamente estrita para não transformar planilhas ambíguas em
-    PREVISTO/REALIZADO por aproximação.
+    Contratos aceitos:
+    1) Previsto + Realizado;
+    2) Valor + Valor2, modelo operacional em que Situação FC define o tipo da
+       linha, Valor alimenta PREVISTO e Valor2 alimenta REALIZADO.
+
+    A identificação não usa posição da coluna, sinal isolado nem aproximação de
+    nomes. Isso evita interpretar layouts desconhecidos como dados financeiros.
+    """
+    c_prev = find_column(table, "Previsto")
+    c_real = find_column(table, "Realizado")
+    if c_prev and c_real:
+        return "previsto_realizado", c_prev, c_real
+
+    c_value = find_column(table, "Valor")
+    c_value2 = find_column(table, "Valor2", "Valor 2")
+    if c_value and c_value2:
+        return "valor_valor2", c_value, c_value2
+    return None
+
+
+def _is_consolidated_fc(table: TableData) -> bool:
+    """Reconhece o consolidado somente com contrato estrutural completo.
+
+    A coluna Situação FC continua sendo a chave determinística de separação
+    PREVISTO/REALIZADO. O par monetário pode ser Previsto/Realizado ou
+    Valor/Valor2, ambos explicitamente conhecidos e validados.
     """
     required = [
         ("Título", "Titulo"),
         ("Cód Fornecedor", "Codigo Fornecedor"),
         ("Fornecedor",),
         ("Data",),
-        ("Previsto",),
-        ("Realizado",),
         ("Situação FC", "Situacao FC", "Situação", "Situacao"),
     ]
-    return _has_all(table, required)
+    return _has_all(table, required) and _consolidated_value_columns(table) is not None
 
 
 def table_role(table: TableData) -> str | None:
@@ -147,11 +169,12 @@ def _split_consolidated_fc(table: TableData) -> tuple[TableData, TableData, list
     c_code = find_column(table, "Cód Fornecedor", "Codigo Fornecedor")
     c_name = find_column(table, "Fornecedor")
     c_date = find_column(table, "Data")
-    c_prev = find_column(table, "Previsto")
-    c_real = find_column(table, "Realizado")
+    value_columns = _consolidated_value_columns(table)
     c_status = find_column(table, "Situação FC", "Situacao FC", "Situação", "Situacao")
     c_month = find_column(table, "Mês", "Mes")
 
+    assert value_columns is not None
+    value_layout, c_prev, c_real = value_columns
     assert all((c_title, c_code, c_name, c_date, c_prev, c_real, c_status))
 
     p_rows: list[dict[str, Any]] = []
@@ -215,6 +238,12 @@ def _split_consolidated_fc(table: TableData) -> tuple[TableData, TableData, list
         "Neste layout, a coluna Data do REALIZADO é usada como data de realização. Como não existe Vencimento, a pontualidade não é inferida e aparecerá como indisponível.",
         "Fluxo JMM e Categoria eventualmente presentes no arquivo importado são ignorados na classificação; a automação continua usando somente a BASE DADOS fixa para evitar inconsistências.",
     ]
+    if value_layout == "valor_valor2":
+        notes.insert(
+            1,
+            "Mapeamento seguro reconhecido: Valor alimenta PREVISTO e Valor2 alimenta REALIZADO. "
+            "O sinal negativo eventualmente presente em Valor2 é normalizado somente depois de a Situação FC confirmar que a linha é REALIZADO."
+        )
     if unknown_status:
         notes.append(
             f"{unknown_status} linha(s) do layout consolidado possuíam Situação FC diferente de PREVISTO/REALIZADO e foram ignoradas por segurança."
@@ -240,7 +269,7 @@ def _friendly_detection_error(workbooks: list[WorkbookData], previsto: list[Tabl
         "A automação aceita atualmente:\n"
         "1) Relatórios separados: PREVISTO com Cód Fornecedor, Fornecedor, Data prevista e Valor previsto; "
         "REALIZADO com Título, código/nome do fornecedor, Vlr.Original, pagamento e vencimento.\n"
-        "2) Relatório consolidado: Título, Cód Fornecedor, Fornecedor, Data, Previsto, Realizado e Situação FC.\n\n"
+        "2) Relatório consolidado: Título, Cód Fornecedor, Fornecedor, Data, Situação FC e um dos pares monetários conhecidos: Previsto/Realizado ou Valor/Valor2.\n\n"
         "Colunas encontradas:\n" + found_text +
         "\n\nSe os dados existem com nomes diferentes, ajuste apenas os cabeçalhos ou envie o modelo para inclusão de um novo mapeamento seguro."
     )

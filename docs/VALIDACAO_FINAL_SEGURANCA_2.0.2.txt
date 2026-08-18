@@ -17,7 +17,7 @@ TESTES DA EDICAO SEGURA
 -----------------------
 - Python compileall: OK
 - JavaScript node --check: OK
-- pytest: 51/51 aprovados
+- pytest: 54/54 aprovados
 - Session isolation: OK
 - CSRF / Origin: OK
 - AES-256-GCM artifact roundtrip e integridade: OK
@@ -44,3 +44,20 @@ adaptador de teste externo ao projeto, baseado em openpyxl, apenas para exercita
 os contratos do motor durante a validacao local. Esse adaptador NAO faz parte da
 entrega. Em producao, requirements.txt continua exigindo python-calamine==0.5.3,
 como no projeto funcional original.
+
+
+ALTERACAO CIRURGICA - VALOR / VALOR2 E FALLBACK DE LEITURA
+----------------------------------------------------------
+- arquivo real Report prev e real.xlsx analisado: OK
+- layout Valor / Valor2 reconhecido deterministicamente: OK
+- 290 registros PREVISTO identificados: OK
+- 1.364 registros REALIZADO identificados: OK
+- Valor usado apenas para PREVISTO confirmado por Situação FC: OK
+- Valor2 usado apenas para REALIZADO confirmado por Situação FC: OK
+- sinal negativo de Valor2 normalizado somente após classificação: OK
+- geração do relatório com o arquivo real: OK
+- PDF gerado com o arquivo real: OK
+- fallback de arquivo sem permissão limpa a seleção sem reload: OK
+- mensagem de erro orientada em 3 passos: OK
+- node --check: OK
+- deploy Render preservado: render.yaml/start.sh sem alteração

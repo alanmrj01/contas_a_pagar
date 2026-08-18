@@ -77,6 +77,42 @@ def optimize_report_file(path: Path) -> list[str]:
     if count != 1:
         raise RuntimeError("Patch de desempenho incompatível com o template atual (filtro de pesquisa).")
 
+    # Seleções são consultadas milhares de vezes durante filtros grandes. Um WeakMap
+    # mantém Sets somente enquanto o array atual de seleção existir.
+    old_matches = "function matchesSelected(value,selected){return !selected.length||selected.includes(value||'')}"
+    new_matches = "const FILTER_SET_CACHE=new WeakMap();function matchesSelected(value,selected){if(!selected.length)return true;let set=FILTER_SET_CACHE.get(selected);if(!set){set=new Set(selected);FILTER_SET_CACHE.set(selected,set)}return set.has(value||'')}"
+    if old_matches not in html:
+        raise RuntimeError("Patch de desempenho incompatível com o template atual (seleções).")
+    html = html.replace(old_matches, new_matches, 1)
+
+    # O filtro em cascata consultava as mesmas combinações várias vezes na mesma
+    # atualização. O cache é invalidado a cada ciclo e recalculado somente quando
+    # alguma seleção é podada.
+    old_possible = (
+        "function possibleFacetValues(facet){\n"
+        "  const items=ALL_ITEMS.filter(x=>passExcept(x,facet));\n"
+        "  if(facet==='emission')return [...new Set(items.map(x=>{let raw=String(competenceDateForItem(x)||'');return raw?raw.slice(0,state.emissionMode==='date'?10:7):''}).filter(Boolean))].sort();\n"
+        "  const cfg=FACET_CONFIG[facet];return uniq(items,cfg.field);\n"
+        "}"
+    )
+    new_possible = (
+        "const FACET_VALUE_CACHE=new Map();"
+        "function facetStateKey(facet){return [facet,state.category.join('\\u001f'),state.flow.join('\\u001f'),state.supplier.join('\\u001f'),state.emissionMode,state.emission.join('\\u001f'),state.search].join('\\u001e')}"
+        "function possibleFacetValues(facet){const cacheKey=facetStateKey(facet);if(FACET_VALUE_CACHE.has(cacheKey))return FACET_VALUE_CACHE.get(cacheKey);"
+        "const items=ALL_ITEMS.filter(x=>passExcept(x,facet));let values;"
+        "if(facet==='emission')values=[...new Set(items.map(x=>{let raw=String(competenceDateForItem(x)||'');return raw?raw.slice(0,state.emissionMode==='date'?10:7):''}).filter(Boolean))].sort();"
+        "else{const cfg=FACET_CONFIG[facet];values=uniq(items,cfg.field)}FACET_VALUE_CACHE.set(cacheKey,values);return values}"
+    )
+    if old_possible not in html:
+        raise RuntimeError("Patch de desempenho incompatível com o template atual (facets).")
+    html = html.replace(old_possible, new_possible, 1)
+
+    old_refresh = "function refreshFilterOptions(){pruneUnavailableSelections();paintStandardFilter('category');paintStandardFilter('flow');paintStandardFilter('supplier');paintEmissionFilter();refreshMonthFilterOptions()}\nfunction applyFiltersNow(){refreshFilterOptions();render()}"
+    new_refresh = "function refreshFilterOptions(){FACET_VALUE_CACHE.clear();const changed=pruneUnavailableSelections();if(changed)FACET_VALUE_CACHE.clear();paintStandardFilter('category');paintStandardFilter('flow');paintStandardFilter('supplier');paintEmissionFilter();refreshMonthFilterOptions()}let filterApplyFrame=0;function applyFiltersNow(){if(filterApplyFrame)cancelAnimationFrame(filterApplyFrame);filterApplyFrame=requestAnimationFrame(()=>{filterApplyFrame=0;refreshFilterOptions();render()})}"
+    if old_refresh not in html:
+        raise RuntimeError("Patch de desempenho incompatível com o template atual (ciclo de filtros).")
+    html = html.replace(old_refresh, new_refresh, 1)
+
     # Mantém a pesquisa dinâmica, mas evita reconstruir todo o dashboard a cada tecla.
     old_search = "el('fSearch').addEventListener('input',e=>{state.search=e.target.value.trim();applyFiltersNow()});"
     new_search = (

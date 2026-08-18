@@ -82,6 +82,7 @@ class SessionState:
     last_pdf_url: str = ""
     last_source_names: list[str] = field(default_factory=list)
     custom_base_table: Any | None = None
+    custom_base_revision: str = ""
     artifact_key: bytearray = field(default_factory=lambda: bytearray(os.urandom(32)))
     report_artifacts: dict[str, SealedArtifact] = field(default_factory=dict)
     report_artifact_root: Path | None = None
@@ -344,6 +345,7 @@ class SessionStore:
             state.wipe_artifact_key()
             state.validated = None
             state.custom_base_table = None
+            state.custom_base_revision = ""
         shutil.rmtree(self.sessions_root / key, ignore_errors=True)
 
     def cleanup_expired(self) -> int:

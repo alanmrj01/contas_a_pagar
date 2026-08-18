@@ -1,0 +1,43 @@
+CONTAS A PAGAR WEB 2.0.2 - VALIDACAO DO COMPLEMENTO AUTOMATICO DA BASE
+
+ESCOPO CIRURGICO
+- A BASE DADOS cadastrada continua sendo a referencia principal.
+- Em cada nova validacao, a aplicacao procura na propria planilha importada as colunas:
+  Cod Fornecedor, Fornecedor, Fluxo JMM e Categoria.
+- Somente codigos de fornecedor AUSENTES da BASE DADOS ativa podem ser complementados.
+- O complemento existe apenas para a validacao/relatorio corrente e nao altera o arquivo
+  resources/base_dados_padrao.xlsx, nao cria banco de dados e nao persiste entre sessoes.
+- A geracao do relatorio usa o resultado reconciliado com essa base complementada.
+
+REGRAS DE INTEGRIDADE
+- Registros ja existentes na BASE DADOS nunca sao sobrescritos pela planilha financeira.
+- As quatro informacoes precisam estar preenchidas na mesma linha.
+- Um mesmo codigo novo pode aparecer varias vezes; a classificacao so e aceita se Fluxo JMM
+  e Categoria forem consistentes em todas as ocorrencias.
+- Variacoes de nome do mesmo codigo sao toleradas quando a classificacao e identica.
+- Se houver conflito de Fluxo JMM/Categoria para um codigo novo, ele nao e adicionado
+  automaticamente e permanece sujeito ao tratamento de Nao classificado.
+- Nao existe classificacao por similaridade, posicao de coluna ou inferencia probabilistica.
+
+VALIDACAO COM O ARQUIVO REAL ENVIADO
+Arquivo: Report prev e real.xlsx
+- PREVISTO reconhecido: 290 registros
+- REALIZADO reconhecido: 1364 registros
+- BASE DADOS original: 180 registros
+- Fornecedores novos complementados automaticamente: 47
+- Registros da planilha usados no complemento: 72
+- BASE efetiva desta validacao: 227 registros
+- Fornecedores ainda sem classificacao segura: 0
+- Conflitos Fluxo JMM/Categoria nos codigos novos: 0
+- Geracao de HTML, PDF e arquivos Excel: OK
+- Artefatos continuaram privados e criptografados em repouso: OK
+
+VALIDACOES AUTOMATIZADAS
+- Python compileall: OK
+- JavaScript node --check: OK
+- pytest: 62/62 APROVADOS
+- teste de nao sobrescrever classificacao existente: OK
+- teste de deduplicacao de codigo novo: OK
+- teste de variacao de nome com classificacao identica: OK
+- teste de conflito de Fluxo JMM/Categoria: OK
+- deploy Render (render.yaml/start.sh/requirements): PRESERVADO SEM ALTERACAO

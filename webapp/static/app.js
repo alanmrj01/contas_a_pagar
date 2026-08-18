@@ -28,8 +28,120 @@
 
   function showMessage(title, message) {
     el('messageTitle').textContent = title;
-    el('messageText').textContent = message;
+    el('messageText').innerHTML = `<p>${esc(message)}</p>`;
     el('messageDialog').showModal();
+  }
+
+  function isFileReadAccessError(error) {
+    const message = String((error && error.message) || error || '').toLowerCase();
+    return [
+      'requested file could not be read',
+      'could not be read',
+      'notreadableerror',
+      'permission problem',
+      'permission denied',
+      'não foi possível ler o arquivo',
+      'nao foi possivel ler o arquivo',
+      'não foi possível abrir a planilha',
+      'nao foi possivel abrir a planilha',
+    ].some(part => message.includes(part));
+  }
+
+  function clearFilesAfterReadFailure() {
+    state.files = [];
+    state.selected.clear();
+    state.validated = false;
+    const input = el('fileInput');
+    if (input) input.value = '';
+    renderFiles();
+    invalidateValidation('O arquivo anterior foi removido automaticamente. Adicione uma cópia local e valide novamente.');
+  }
+
+  function errorGuide(error, context = 'validate') {
+    const message = String((error && error.message) || error || 'Ocorreu um erro inesperado.');
+
+    if (isFileReadAccessError(error)) {
+      return {
+        title: 'Não foi possível ler o arquivo',
+        summary: 'O navegador perdeu ou não recebeu permissão suficiente para ler a planilha selecionada. Isso pode acontecer quando o arquivo está aberto no Excel, está em pasta de rede, OneDrive/SharePoint ou veio de uma origem com acesso controlado.',
+        steps: [
+          'Feche a planilha no Excel ou em qualquer outro programa que possa estar usando o arquivo.',
+          'Faça uma cópia do arquivo para uma pasta local simples, como Downloads ou Área de Trabalho.',
+          'Clique em Adicionar arquivo, selecione essa cópia e execute Validar arquivo novamente.',
+        ],
+        footer: 'A lista de arquivos foi limpa automaticamente para que a referência com problema não seja reutilizada. Nenhum dado financeiro desse arquivo foi mantido pela aplicação.',
+        technical: message,
+        clearFiles: true,
+      };
+    }
+
+    if (message.includes('Não consegui identificar com segurança')) {
+      return {
+        title: 'Não foi possível identificar os dados',
+        summary: 'A planilha foi lida, porém a estrutura encontrada ainda não correspondeu a um modelo financeiro reconhecido com segurança.',
+        steps: [
+          'Confira se o consolidado contém Título, Cód Fornecedor, Fornecedor, Data e Situação FC.',
+          'O consolidado pode usar Previsto/Realizado ou Valor/Valor2. No modelo Valor/Valor2, Valor alimenta PREVISTO e Valor2 alimenta REALIZADO somente depois de a Situação FC confirmar o tipo da linha.',
+          'Se a planilha tiver outro padrão, não troque colunas por tentativa. Utilize um modelo conhecido ou encaminhe o layout para inclusão de um novo mapeamento determinístico.',
+        ],
+        footer: 'Nenhum valor é estimado a partir de coluna ambígua. A validação é interrompida para evitar um relatório financeiramente incorreto.',
+        technical: message,
+        clearFiles: false,
+      };
+    }
+
+    if (context === 'base') {
+      return {
+        title: 'Não foi possível atualizar a Base de Dados',
+        summary: 'A base enviada não pôde ser confirmada com segurança. A base anterior foi preservada e continua ativa.',
+        steps: [
+          'Confira se a planilha contém Cód Fornecedor, Fornecedor, Fluxo JMM e Categoria.',
+          'Se o arquivo estiver aberto, em rede ou sincronizado, feche-o e tente novamente usando uma cópia em Downloads ou Área de Trabalho.',
+          'Se o erro continuar, preserve a base atual e encaminhe os detalhes técnicos abaixo para análise antes de substituir qualquer informação.',
+        ],
+        footer: 'A Base de Dados anterior não é substituída quando a nova planilha falha na validação.',
+        technical: message,
+        clearFiles: false,
+      };
+    }
+
+    return {
+      title: context === 'generate' ? 'Não foi possível gerar o relatório' : 'Não foi possível concluir',
+      summary: 'A operação foi interrompida antes de continuar com dados possivelmente incorretos.',
+      steps: [
+        'Confira se o arquivo continua disponível e não está aberto ou bloqueado por outro programa.',
+        'Se a origem for rede, OneDrive/SharePoint ou pasta sincronizada, tente novamente usando uma cópia em Downloads ou Área de Trabalho.',
+        'Se o erro continuar, preserve o arquivo original e encaminhe os detalhes técnicos exibidos abaixo para análise.',
+      ],
+      footer: 'Os arquivos originais e a BASE DADOS não são modificados pela validação.',
+      technical: message,
+      clearFiles: false,
+    };
+  }
+
+  function guideHtml(guide) {
+    return `<div class="error-guide">
+      <p class="error-summary">${esc(guide.summary)}</p>
+      <ol class="error-steps">${guide.steps.map(step => `<li>${esc(step)}</li>`).join('')}</ol>
+      <p class="error-footer">${esc(guide.footer)}</p>
+      <details class="error-technical"><summary>Detalhes técnicos</summary><pre>${esc(guide.technical)}</pre></details>
+    </div>`;
+  }
+
+  function showGuidedError(guide) {
+    el('messageTitle').textContent = guide.title;
+    el('messageText').innerHTML = guideHtml(guide);
+    el('messageDialog').showModal();
+  }
+
+  async function probeFileReadable(file) {
+    try {
+      const probeSize = Math.min(file.size || 0, 64 * 1024);
+      if (probeSize > 0) await file.slice(0, probeSize).arrayBuffer();
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   const textEncoder = new TextEncoder();
@@ -214,12 +326,19 @@
     syncSteps();
   }
 
-  function addFiles(fileList) {
+  async function addFiles(fileList) {
     let added = 0;
     const existing = new Set(state.files.map(f => `${f.name.toLowerCase()}|${f.size}|${f.lastModified}`));
     for (const file of Array.from(fileList || [])) {
       const ext = file.name.includes('.') ? `.${file.name.split('.').pop().toLowerCase()}` : '';
       if (!supported.has(ext)) continue;
+
+      if (!(await probeFileReadable(file))) {
+        clearFilesAfterReadFailure();
+        showGuidedError(errorGuide(new Error('The requested file could not be read. The browser did not retain permission to access the selected file.')));
+        return;
+      }
+
       const unique = `${file.name.toLowerCase()}|${file.size}|${file.lastModified}`;
       if (!existing.has(unique)) {
         state.files.push(file);
@@ -239,8 +358,16 @@
     let html = '<div><p><b class="blue">O que foi reconhecido</b></p><table>';
     html += `<tr><td><b>PREVISTO</b></td><td>${summary.previsto} registros em ${summary.previsto_tables} tabela(s)</td></tr>`;
     html += `<tr><td><b>REALIZADO</b></td><td>${summary.realizado} registros em ${summary.realizado_tables} tabela(s)</td></tr>`;
-    html += `<tr><td><b>BASE DADOS</b></td><td>${summary.base} registros</td></tr>`;
+    const autoAdded = Number(summary.base_health?.auto_added_suppliers || 0);
+    html += `<tr><td><b>BASE DADOS</b></td><td>${summary.base} registros${autoAdded ? ` • ${autoAdded} complementado(s) automaticamente pela planilha` : ''}</td></tr>`;
     html += `<tr><td><b>Período</b></td><td>${esc(summary.period)}</td></tr></table>`;
+    if (summary.base_health && summary.base_health.status === 'attention') {
+      const names = (summary.base_health.suppliers || []).map(esc).join(', ');
+      html += '<p><b class="warning">Classificação incompleta após complemento automático</b></p>';
+      html += `<div class="analysis-placeholder"><b>${esc(summary.base_health.message)}</b>${names ? `<br><span>Fornecedor(es) ainda sem classificação segura: ${names}</span>` : ''}<br><span>Confira no arquivo importado se <b>Cód Fornecedor, Fornecedor, Fluxo JMM e Categoria</b> estão preenchidos e consistentes. Corrija a própria planilha e valide novamente.</span></div>`;
+    } else if (summary.base_health && summary.base_health.status === 'ok') {
+      html += `<p class="good"><b>${esc(summary.base_health.message)}</b></p>`;
+    }
     if (summary.notes && summary.notes.length) {
       html += '<p><b class="light-blue">Observações da leitura</b></p><ul>';
       html += summary.notes.map(note => `<li>${esc(note)}</li>`).join('');
@@ -279,10 +406,11 @@
     } catch (error) {
       await discardUploads(staged);
       state.validated = false;
+      const guide = errorGuide(error, 'validate');
+      if (guide.clearFiles) clearFilesAfterReadFailure();
       setAnalysis('ATENÇÃO', 'A automação interrompeu a etapa para evitar gerar um relatório com dados possivelmente incorretos.');
-      el('analysisDetails').innerHTML = `<div><p><b class="danger">O que aconteceu</b></p><p>${esc(error.message)}</p><p style="color:#b9cad7">Revise a mensagem acima e corrija somente o ponto indicado. Os arquivos originais e a BASE DADOS foram preservados.</p></div>`;
-      const title = error.message.includes('Não consegui identificar com segurança') ? 'Não foi possível identificar os dados' : 'Não foi possível concluir';
-      showMessage(title, error.message);
+      el('analysisDetails').innerHTML = `<div><p><b class="danger">Como resolver</b></p>${guideHtml(guide)}</div>`;
+      showGuidedError(guide);
     } finally {
       setBusy(false);
     }
@@ -301,9 +429,10 @@
       setBusy(false);
       window.location.assign(state.reportUrl);
     } catch (error) {
+      const guide = errorGuide(error, 'generate');
       setAnalysis('ATENÇÃO', 'A automação interrompeu a etapa para evitar gerar um relatório com dados possivelmente incorretos.');
-      el('analysisDetails').innerHTML = `<div><p><b class="danger">O que aconteceu</b></p><p>${esc(error.message)}</p><p style="color:#b9cad7">Os arquivos originais e a BASE DADOS foram preservados.</p></div>`;
-      showMessage('Não foi possível concluir', error.message);
+      el('analysisDetails').innerHTML = `<div><p><b class="danger">Como resolver</b></p>${guideHtml(guide)}</div>`;
+      showGuidedError(guide);
       setBusy(false);
     }
   }
@@ -312,7 +441,7 @@
     try {
       await ensureSecurity();
       const result = await api('/api/state');
-      el('baseInfo').textContent = `BASE DADOS ativa: ${result.base.rows} registros • ${result.base.origin}`;
+      el('baseInfo').textContent = `BASE DADOS ativa: ${result.base.rows} registros • ${result.base.origin}${result.base.revision && result.base.revision !== 'padrao' ? ` • revisão ${result.base.revision}` : ''}`;
       state.validated = !!result.validated;
       state.reportUrl = result.report_url || '';
       state.pdfUrl = result.pdf_url || '';
@@ -332,7 +461,7 @@
     el('baseDialog').showModal();
     try {
       const data = await api('/api/base');
-      el('baseDialogInfo').textContent = `BASE DADOS ativa: ${data.rows} registros • ${data.origin}`;
+      el('baseDialogInfo').textContent = `BASE DADOS ativa: ${data.rows} registros • ${data.origin}${data.revision && data.revision !== 'padrao' ? ` • revisão ${data.revision}` : ''}`;
       el('baseTableBody').innerHTML = data.items.map(row => `<tr><td>${esc(row.supplier_code)}</td><td>${esc(row.supplier)}</td><td>${esc(row.flow)}</td><td>${esc(row.category)}</td></tr>`).join('');
     } catch (error) {
       el('baseTableBody').innerHTML = `<tr><td colspan="4" class="danger">${esc(error.message)}</td></tr>`;
@@ -348,30 +477,30 @@
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({upload_id:uploadId}),
       });
-      el('baseInfo').textContent = `BASE DADOS ativa: ${result.base.rows} registros • ${result.base.origin}`;
+      el('baseInfo').textContent = `BASE DADOS ativa: ${result.base.rows} registros • ${result.base.origin}${result.base.revision && result.base.revision !== 'padrao' ? ` • revisão ${result.base.revision}` : ''}`;
       invalidateValidation('BASE DADOS alterada. Valide novamente os arquivos antes de gerar o relatório.');
       await openBaseDialogRefresh();
-      showMessage('Base atualizada', `Nova BASE DADOS validada e salva com ${result.base.rows} registros.`);
+      showMessage('Base atualizada', `Nova BASE DADOS validada e atualizada no site e no back-end desta sessão com ${result.base.rows} registros. Valide novamente os arquivos antes de gerar o relatório.`);
     } catch (error) {
       if (uploadId) await discardUploads([uploadId]);
-      showMessage('Base recusada', error.message);
+      showGuidedError(errorGuide(error, 'base'));
     }
   }
 
   async function openBaseDialogRefresh() {
     try {
       const data = await api('/api/base');
-      el('baseDialogInfo').textContent = `BASE DADOS ativa: ${data.rows} registros • ${data.origin}`;
+      el('baseDialogInfo').textContent = `BASE DADOS ativa: ${data.rows} registros • ${data.origin}${data.revision && data.revision !== 'padrao' ? ` • revisão ${data.revision}` : ''}`;
       el('baseTableBody').innerHTML = data.items.map(row => `<tr><td>${esc(row.supplier_code)}</td><td>${esc(row.supplier)}</td><td>${esc(row.flow)}</td><td>${esc(row.category)}</td></tr>`).join('');
     } catch (_) {}
   }
 
   el('pickBtn').addEventListener('click', () => el('fileInput').click());
   el('dropArea').addEventListener('click', () => el('fileInput').click());
-  el('fileInput').addEventListener('change', event => { addFiles(event.target.files); event.target.value = ''; });
+  el('fileInput').addEventListener('change', async event => { const files = Array.from(event.target.files || []); event.target.value = ''; await addFiles(files); });
   el('dropArea').addEventListener('dragover', event => { event.preventDefault(); if (!state.busy) el('dropArea').classList.add('dragover'); });
   el('dropArea').addEventListener('dragleave', () => el('dropArea').classList.remove('dragover'));
-  el('dropArea').addEventListener('drop', event => { event.preventDefault(); el('dropArea').classList.remove('dragover'); if (!state.busy) addFiles(event.dataTransfer.files); });
+  el('dropArea').addEventListener('drop', async event => { event.preventDefault(); el('dropArea').classList.remove('dragover'); if (!state.busy) await addFiles(event.dataTransfer.files); });
 
   el('fileList').addEventListener('click', event => {
     const item = event.target.closest('.file-item');

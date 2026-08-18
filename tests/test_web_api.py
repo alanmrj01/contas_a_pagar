@@ -61,6 +61,9 @@ def test_http_flow_encrypted_upload_validate_generate_and_private_downloads(tmp_
     assert report.status_code == 200
     assert "Contas a Pagar — Previsto x Realizado" in report.text
     assert "WEB-PERFORMANCE-PATCH-2.0.2" in report.text
+    assert "FILTER_SET_CACHE" in report.text
+    assert "FACET_VALUE_CACHE" in report.text
+    assert "filterApplyFrame" in report.text
     assert pdf.status_code == 200
     assert pdf.content.startswith(b"%PDF")
     assert "no-store" in report.headers["cache-control"]
@@ -149,3 +152,55 @@ def test_security_cookie_on_https_is_secure_httponly_and_strict(tmp_path, monkey
     assert "Secure" in cookie
     assert "SameSite=strict" in cookie
     assert "Max-Age=7200" in cookie
+
+
+def test_validation_summary_reports_base_health(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+    client = TestClient(main.app)
+    sample = ROOT / "samples" / "PLANILHAS PAGAR E PREVISTO.xlsx"
+    upload_id = stage_file(client, sample)
+    response = client.post(
+        "/api/validate",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"upload_ids": [upload_id]},
+    )
+    assert response.status_code == 200, response.text
+    health = response.json()["summary"]["base_health"]
+    assert health["status"] in {"ok", "attention"}
+    assert "missing_records" in health
+    assert "missing_suppliers" in health
+    assert "message" in health
+
+
+def test_imported_base_updates_site_backend_state_and_revalidation(tmp_path, monkeypatch):
+    import openpyxl
+
+    main = load_main(tmp_path, monkeypatch)
+    client = TestClient(main.app)
+
+    base_path = tmp_path / "base_atualizada.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "BASE DADOS"
+    ws.append(["Cód Fornecedor", "Fornecedor", "Fluxo JMM", "Categoria"])
+    ws.append([9001, "FORNECEDOR DEMONSTRACAO ALFA", "FLUXO A", "CATEGORIA A"])
+    ws.append([9002, "FORNECEDOR DEMONSTRACAO BETA", "FLUXO B", "CATEGORIA B"])
+    ws.append([9003, "FORNECEDOR DEMONSTRACAO GAMA", "FLUXO C", "CATEGORIA C"])
+    wb.save(base_path)
+
+    base_upload = stage_file(client, base_path, purpose="base")
+    imported = client.post(
+        "/api/base/import",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"upload_id": base_upload},
+    )
+    assert imported.status_code == 200, imported.text
+    info = imported.json()["base"]
+    assert info["origin"] == "personalizada"
+    assert info["revision"] and info["revision"] != "padrao"
+
+    backend = client.get("/api/base")
+    assert backend.status_code == 200
+    assert backend.json()["origin"] == "personalizada"
+    assert backend.json()["revision"] == info["revision"]
+    assert backend.json()["rows"] == 3

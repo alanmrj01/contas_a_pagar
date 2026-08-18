@@ -89,13 +89,15 @@ def test_empresa_filter_was_removed_without_affecting_other_filters():
         assert token in TEMPLATE
 
 
-def test_emission_competence_filter_supports_month_and_exact_date():
+def test_payment_month_filter_supports_month_and_exact_date():
     assert 'id="mfEmission"' in TEMPLATE
-    assert 'Emissão/Competência' in TEMPLATE
+    assert 'Pagamento/Mês' in TEMPLATE
+    assert 'Emissão/Competência' not in TEMPLATE
     assert 'name="emissionMode" value="month"' in TEMPLATE
     assert 'name="emissionMode" value="date"' in TEMPLATE
-    assert "x.kind==='realizado'?(x.emission_date||''):(x.date||'')" in TEMPLATE
+    assert "function competenceDateForItem(x){return x.date||''}" in TEMPLATE
     assert "state.emissionMode==='date'" in TEMPLATE
+    assert 'REALIZADO: Pagamento • PREVISTO: Data prevista' in TEMPLATE
     assert 'buildEmissionFilter()' in TEMPLATE
 
 
@@ -175,3 +177,19 @@ def test_report_content_starts_at_explicit_100_percent_zoom():
     assert 'content="width=device-width,initial-scale=1.0"' in TEMPLATE
     assert "document.documentElement.style.zoom='1';document.body.style.zoom='1';" in TEMPLATE
     assert 'html{zoom:1!important}' in TEMPLATE
+
+
+def test_category_chart_compares_named_current_and_previous_months():
+    assert 'function categoryComparisonMonth(items)' in TEMPLATE
+    assert 'previousMonth=previousMonthKey(currentMonth)' in TEMPLATE
+    assert "categoryMonthHint" in TEMPLATE
+    assert "categoryMonthLegend" in TEMPLATE
+    assert "previousLabel=monthLabel(previousMonth+'-01',true)" in TEMPLATE
+    assert "currentLabel=monthLabel(currentMonth+'-01',true)" in TEMPLATE
+    assert "currentP={},currentR={},previousP={},previousR={}" in TEMPLATE
+
+
+def test_monthly_cards_require_a_filter_and_never_use_generic_latest_month_tag():
+    assert 'Aplique pelo menos um filtro para visualizar os cards mensais.' in TEMPLATE
+    assert "periodLabel:monthLabel(latest+'-01',multiYear)" in TEMPLATE
+    assert "periodLabel:'MÊS MAIS RECENTE'" not in TEMPLATE

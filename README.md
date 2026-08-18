@@ -98,3 +98,16 @@ O projeto contém `resources/base_dados_padrao.xlsx`, porque ela faz parte da cl
 A planilha em `samples/` desta entrega foi substituída por uma amostra sintética. Caso uma versão anterior com dados reais tenha sido enviada a um repositório público, apagar o arquivo em um commit novo não remove o conteúdo do histórico do Git; o histórico deve ser higienizado separadamente.
 
 DataTech - AMRJ
+
+
+## Refinos cirúrgicos — relatório e BASE DADOS
+
+Esta edição mantém o motor determinístico e a arquitetura de segurança da 2.0.2 e altera somente os pontos aprovados:
+
+- filtro visual **Pagamento/Mês**, usando pagamento no REALIZADO e Data prevista no PREVISTO;
+- gráfico **Previsto x Realizado por categoria** comparando o mês de referência com o mês-calendário imediatamente anterior, ambos identificados pelo nome real do mês;
+- visão mensal por fornecedor/Fluxo JMM/Categoria sem carga massiva de cards quando não existe filtro;
+- rótulos dos cards usam o nome real do mês, sem a expressão genérica "mês mais recente";
+- diagnóstico de fornecedores sem classificação segura na BASE DADOS durante a validação;
+- base personalizada importada torna-se imediatamente ativa no front-end e no back-end da sessão, invalidando a validação anterior e exigindo nova validação;
+- otimizações de execução dos filtros (cache de pesquisa, Sets de seleção, cache de facets e render agendado) sem mudar a lógica dos filtros.

@@ -14,5 +14,17 @@
     "app/services/validation_service.py": "7564C32C3E10AEEE377F53906B957F7E72EBAD1D5E6BEC0D36F7D176B634DF85",
     "app/report/report_template.html": "EE17F692ED1B48D4BE03F2A5B20B22940674844F4805C2B84990552A40FD720B",
     "resources/base_dados_padrao.xlsx": "612CD84D04B1E01CB2CF1EDA829FACFA7F657135FE580466926DDB6301339A8B"
+  },
+  "approved_web_overrides": {
+    "app/services/sheet_detector.py": {
+      "desktop_2_0_2_sha256": "399CBD8CCF98AAB54915EA436BB06A2190986FBC4775FC41D0F9B94EF699EBF0",
+      "current_sha256": "FB920893E742F7B068CFCBDF9721474021C03E532593D4CA9350A59C9D01FF25",
+      "reason": "Alteração cirúrgica aprovada: suporte determinístico ao consolidado Valor/Valor2, mantendo Situação FC como única chave de separação PREVISTO/REALIZADO."
+    },
+    "app/report/report_template.html": {
+      "desktop_2_0_2_sha256": "EE17F692ED1B48D4BE03F2A5B20B22940674844F4805C2B84990552A40FD720B",
+      "current_sha256": "4FA6BD365729F68B7926FA8F1D9FA4C50215C419A051E8187A7C5447533E5E9B",
+      "reason": "Alterações cirúrgicas aprovadas no relatório web: filtro Pagamento/Mês; comparação por categoria entre mês vigente e mês anterior; cards mensais condicionados a filtros; rótulos de mês reais e refinamentos de desempenho sem alteração do motor financeiro."
+    }
   }
 }

@@ -74,3 +74,24 @@ A adaptação é deliberadamente estrita:
 - não existem outros valores não vazios em `Situação FC` além de PREVISTO/REALIZADO.
 
 A validação com a BASE DADOS padrão encontrou fornecedores ainda não classificados. Eles permanecem `Não classificado`, com alerta auditável; **não existe fallback por similaridade que altere indicador**.
+
+
+## Adendo web — layout consolidado `Valor` / `Valor2`
+Foi validado um segundo contrato explícito para o mesmo layout consolidado. Quando a tabela contém `Título`, `Cód Fornecedor`, `Fornecedor`, `Data`, `Valor`, `Valor2` e `Situação FC`, a automação reconhece esse modelo sem exigir que os cabeçalhos monetários sejam renomeados para `Previsto` e `Realizado`.
+
+Regras determinísticas:
+1. `Situação FC = PREVISTO` define a linha como PREVISTO e utiliza exclusivamente `Valor`;
+2. `Situação FC = REALIZADO` define a linha como REALIZADO e utiliza exclusivamente `Valor2`;
+3. o sinal negativo de `Valor2`, quando presente, só é normalizado com `abs()` depois de a linha estar confirmada como REALIZADO pela `Situação FC`;
+4. a existência de números positivos/negativos isoladamente não classifica uma linha;
+5. nenhum fallback por posição de coluna ou semelhança de nome é permitido.
+
+No arquivo real `Report prev e real.xlsx` usado para validação desta alteração:
+- 290 linhas foram identificadas como PREVISTO;
+- 1.364 linhas foram identificadas como REALIZADO;
+- o total PREVISTO lido de `Valor` foi R$ 19.316.472,201513;
+- o total REALIZADO lido de `abs(Valor2)` foi R$ 16.066.043,83;
+- 1.364/1.364 linhas REALIZADO possuíam `Valor2` negativo;
+- 2 linhas PREVISTO possuíam valor zero e foram preservadas.
+
+Esse adendo altera somente a detecção do contrato de entrada. Reconciliação, classificação, métricas, PDF, Excel, relatório, filtros, gráficos, cores e temas permanecem inalterados.

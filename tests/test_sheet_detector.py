@@ -54,6 +54,25 @@ def test_consolidated_client_layout_is_split_deterministically():
     assert result.realizado[0]["punctuality"] == "Sem data"
 
 
+
+def test_consolidated_valor_valor2_layout_is_split_deterministically():
+    headers = ["Título", "Tipo", "Cód Fornecedor", "Fornecedor", "Data", "Valor", "Valor2", "Situação FC", "Mês ", "Fluxo JMM", "Categoria "]
+    table = TableData("Base de dados", headers, [
+        src(2, **{"Título": "PREV CONTRATO", "Cód Fornecedor": 10, "Fornecedor": "FORNECEDOR A", "Data": 46145, "Valor": 14369.68, "Valor2": 14369.68, "Situação FC": "Previsto", "Mês ": "MAIO"}),
+        src(3, **{"Título": "NF-1", "Cód Fornecedor": 10, "Fornecedor": "FORNECEDOR A", "Data": 46146, "Valor": 162.18, "Valor2": -162.18, "Situação FC": "Realizado ", "Mês ": "MAIO"}),
+    ])
+    wb = WorkbookData(path=None, tables=[table])  # type: ignore[arg-type]
+
+    assert table_role(table) == "consolidado"
+    detection = detect_input_tables([wb])
+    assert len(detection.previsto.rows) == 1
+    assert len(detection.realizado.rows) == 1
+    assert detection.previsto.rows[0]["Valor previsto"] == 14369.68
+    assert detection.realizado.rows[0]["Vlr.Original"] == 162.18
+    assert detection.realizado.rows[0]["Fornecedor"] == 10
+    assert detection.realizado.rows[0]["Nome Fornecedor"] == "FORNECEDOR A"
+    assert any("Valor alimenta PREVISTO" in note for note in detection.notes)
+
 def test_unsupported_layout_has_friendly_specific_error():
     table = TableData("Dados", ["Fornecedor qualquer", "Valor qualquer"], [src(2, **{"Fornecedor qualquer": "A", "Valor qualquer": 10})])
     wb = WorkbookData(path=type("P", (), {"name": "invalido.xlsx"})(), tables=[table])  # lightweight path-like for message

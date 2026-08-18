@@ -19,8 +19,13 @@ def sha(path: Path) -> str:
 
 def test_core_financial_files_match_desktop_2_0_2_manifest():
     manifest = json.loads((ROOT / "docs" / "CORE_PARITY_SHA256.json").read_text(encoding="utf-8"))
+    approved = manifest.get("approved_web_overrides", {})
     for rel, expected in manifest["files"].items():
-        assert sha(ROOT / rel) == expected, rel
+        if rel in approved:
+            assert approved[rel]["desktop_2_0_2_sha256"] == expected, rel
+            assert sha(ROOT / rel) == approved[rel]["current_sha256"], rel
+        else:
+            assert sha(ROOT / rel) == expected, rel
 
 
 def test_web_home_preserves_three_step_story_and_base_access():
@@ -71,8 +76,26 @@ def test_session_id_is_not_exposed_in_report_urls_and_generated_mount_is_gone():
     assert "httponly=True" in main
 
 
-def test_report_template_itself_remains_desktop_baseline():
+def test_report_template_changes_are_explicitly_registered_as_approved_override():
     manifest = json.loads((ROOT / "docs" / "CORE_PARITY_SHA256.json").read_text(encoding="utf-8"))
     rel = "app/report/report_template.html"
-    assert sha(ROOT / rel) == manifest["files"][rel]
+    override = manifest["approved_web_overrides"][rel]
+    assert override["desktop_2_0_2_sha256"] == manifest["files"][rel]
+    assert sha(ROOT / rel) == override["current_sha256"]
     assert MARKER not in (ROOT / rel).read_text(encoding="utf-8")
+
+
+def test_unreadable_file_fallback_clears_browser_selection_without_reload():
+    assert "function isFileReadAccessError" in JS
+    assert "function clearFilesAfterReadFailure" in JS
+    assert "state.files = []" in JS
+    assert "input.value = ''" in JS
+    assert "Faça uma cópia do arquivo" in JS
+    assert "window.location.reload" not in JS
+
+
+def test_error_dialog_is_guided_in_three_steps_and_keeps_technical_details_collapsed():
+    assert "error-steps" in JS
+    assert "guide.steps.map" in JS
+    assert "Detalhes técnicos" in JS
+    assert "clearFilesAfterReadFailure" in JS

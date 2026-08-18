@@ -1,0 +1,26 @@
+CONTAS A PAGAR WEB 2.0.2 - VALIDACAO DE REFINOS CIRURGICOS
+
+ESCOPO ALTERADO
+- Nome do filtro: Pagamento/Mês.
+- REALIZADO usa a data de pagamento já normalizada em `date`; PREVISTO usa Data prevista em `date`.
+- Gráfico por categoria compara mês de referência x mês-calendário anterior com nomes reais dos meses.
+- Cards mensais só são renderizados quando existe algum filtro aplicado.
+- Tag genérica "MÊS MAIS RECENTE" removida; o card mostra o nome real do mês.
+- Validação informa quando fornecedores/registros não possuem classificação segura na BASE DADOS e recomenda atualização.
+- Importação de BASE DADOS atualiza imediatamente a base ativa do back-end da sessão e a visualização do site.
+- Filtros receberam cache de seleção/facets e agendamento de render para reduzir travamentos.
+
+PRESERVADO
+- motor determinístico de leitura, normalização e reconciliação;
+- regra de classificação por código exato / nome exato inequívoco;
+- layout Valor/Valor2 aprovado;
+- gráficos, temas, cores e componentes não citados no escopo;
+- segurança AES-GCM/RSA-OAEP, isolamento por sessão, TTL 2h, rotas privadas e headers;
+- deploy Render (render.yaml/start.sh).
+
+VALIDACOES EXECUTADAS
+- compileall: OK
+- pytest: 58/58
+- fluxo API validar -> gerar -> abrir relatório: OK
+- JavaScript do relatório otimizado: node --check OK
+- CSP/artefatos privados/segurança: cobertos pela suíte existente
