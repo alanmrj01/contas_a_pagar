@@ -23,8 +23,8 @@
     },
     "app/report/report_template.html": {
       "desktop_2_0_2_sha256": "EE17F692ED1B48D4BE03F2A5B20B22940674844F4805C2B84990552A40FD720B",
-      "current_sha256": "AF0CE97C3F0EA0948E5F13C1EAD01711BBB0EE99B847F70AF4F5C913D80EEDF7",
-      "reason": "Alterações cirúrgicas aprovadas no relatório web: filtro Pagamento/Mês; comparação por categoria guiada pelos meses selecionados; cards mensais condicionados a filtros; melhoria de contraste, tooltip e organização dos rótulos sem alteração do motor financeiro."
+      "current_sha256": "3E49A1C60BFE22C63BE2372644FADC0702776B8563B46561B6A83B7D6E7D1887",
+      "reason": "Alteração cirúrgica aprovada somente no gráfico Previsto x Realizado por categoria: rótulos de dados em balões de alto contraste nos temas claro e escuro, mantendo tooltip, organização, regra dos meses, cores das colunas e motor financeiro inalterados."
     }
   }
 }
