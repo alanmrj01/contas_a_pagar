@@ -23,8 +23,8 @@
     },
     "app/report/report_template.html": {
       "desktop_2_0_2_sha256": "EE17F692ED1B48D4BE03F2A5B20B22940674844F4805C2B84990552A40FD720B",
-      "current_sha256": "4FA6BD365729F68B7926FA8F1D9FA4C50215C419A051E8187A7C5447533E5E9B",
-      "reason": "Alterações cirúrgicas aprovadas no relatório web: filtro Pagamento/Mês; comparação por categoria entre mês vigente e mês anterior; cards mensais condicionados a filtros; rótulos de mês reais e refinamentos de desempenho sem alteração do motor financeiro."
+      "current_sha256": "AF0CE97C3F0EA0948E5F13C1EAD01711BBB0EE99B847F70AF4F5C913D80EEDF7",
+      "reason": "Alterações cirúrgicas aprovadas no relatório web: filtro Pagamento/Mês; comparação por categoria guiada pelos meses selecionados; cards mensais condicionados a filtros; melhoria de contraste, tooltip e organização dos rótulos sem alteração do motor financeiro."
     }
   }
 }
