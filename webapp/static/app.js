@@ -13,6 +13,10 @@
     spinnerTimer: null,
     spinnerIndex: 0,
     pendingBaseFile: null,
+    pendingBaseUploadId: '',
+    pendingBaseConflicts: [],
+    baseItems: [],
+    baseEditing: false,
     security: null,
     serverPublicKey: null,
   };
@@ -169,7 +173,7 @@
     return payload;
   }
 
-  async function api(url, options = {}) {
+  async function api(url, options = {}, retried = false) {
     const method = String(options.method || 'GET').toUpperCase();
     const headers = new Headers(options.headers || {});
     if (['POST','PUT','PATCH','DELETE'].includes(method)) {
@@ -180,9 +184,15 @@
     let payload = null;
     try { payload = await response.json(); } catch (_) { payload = null; }
     if (!response.ok) {
-      if (response.status === 403) {
+      if (response.status === 401) {
+        window.location.replace('/');
+        throw new Error('Sua sessão expirou. Faça login novamente.');
+      }
+      if (response.status === 403 && payload && payload.code === 'CSRF_REFRESH_REQUIRED' && !retried) {
         state.security = null;
         state.serverPublicKey = null;
+        await ensureSecurity(true);
+        return api(url, options, true);
       }
       throw new Error((payload && payload.detail) || `Falha HTTP ${response.status}`);
     }
@@ -445,9 +455,6 @@
       state.validated = !!result.validated;
       state.reportUrl = result.report_url || '';
       state.pdfUrl = result.pdf_url || '';
-      // Uma nova navegação não possui os File objetos originais do navegador.
-      // Por segurança, revalidação exige nova seleção caso a página tenha sido recarregada.
-      if (!state.files.length) state.validated = false;
       syncSteps();
     } catch (error) {
       el('baseInfo').textContent = `ERRO NA BASE DADOS: ${error.message}`;
@@ -461,28 +468,114 @@
     el('baseDialog').showModal();
     try {
       const data = await api('/api/base');
-      el('baseDialogInfo').textContent = `BASE DADOS ativa: ${data.rows} registros • ${data.origin}${data.revision && data.revision !== 'padrao' ? ` • revisão ${data.revision}` : ''}`;
-      el('baseTableBody').innerHTML = data.items.map(row => `<tr><td>${esc(row.supplier_code)}</td><td>${esc(row.supplier)}</td><td>${esc(row.flow)}</td><td>${esc(row.category)}</td></tr>`).join('');
+      state.baseItems = data.items;
+      state.baseEditing = false;
+      renderBaseTable(data);
     } catch (error) {
       el('baseTableBody').innerHTML = `<tr><td colspan="4" class="danger">${esc(error.message)}</td></tr>`;
     }
   }
 
-  async function importBase(file) {
+  function renderBaseTable(data = null) {
+    if (data) {
+      el('baseDialogInfo').textContent = `BASE DADOS ativa: ${data.rows} registros • ${data.origin}${data.revision && data.revision !== 'padrao' ? ` • revisão ${data.revision}` : ''}`;
+    }
+    const editable = state.baseEditing;
+    el('editBaseBtn').hidden = editable;
+    el('saveBaseBtn').hidden = !editable;
+    el('cancelBaseEditBtn').hidden = !editable;
+    el('importBaseBtn').disabled = editable;
+    el('baseTableBody').innerHTML = state.baseItems.map((row, index) => {
+      const cells = ['supplier_code','supplier','flow','category'].map(field => editable
+        ? `<td><input class="base-cell-input" data-row="${index}" data-field="${field}" value="${esc(row[field])}" /></td>`
+        : `<td>${esc(row[field])}</td>`).join('');
+      return `<tr>${cells}</tr>`;
+    }).join('');
+  }
+
+  function collectEditedBase() {
+    return state.baseItems.map((row, index) => {
+      const updated = {...row};
+      document.querySelectorAll(`#baseTableBody [data-row="${index}"]`).forEach(input => {
+        updated[input.dataset.field] = input.value.trim();
+      });
+      return updated;
+    });
+  }
+
+  async function saveBaseEdits() {
+    if (state.busy || !state.baseEditing) return;
+    setBusy(true);
+    try {
+      const items = collectEditedBase();
+      const result = await api('/api/base', {
+        method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({items}),
+      });
+      state.baseEditing = false;
+      await openBaseDialogRefresh();
+      invalidateValidation('BASE DADOS alterada e salva com segurança. Os arquivos financeiros protegidos podem ser reprocessados sem novo envio.');
+      showMessage('Base atualizada', `As alterações foram validadas e salvas na BASE DADOS persistente (${result.base.rows} registros).`);
+    } catch (error) {
+      showGuidedError(errorGuide(error, 'base'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitBaseImport(uploadId, mode, duplicateAction = 'ask', editedDuplicates = []) {
+    const result = await api('/api/base/import', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        upload_id:uploadId,
+        mode,
+        duplicate_action:duplicateAction,
+        edited_duplicates:editedDuplicates,
+      }),
+    });
+    if (result.requires_resolution) {
+      state.pendingBaseUploadId = uploadId;
+      state.pendingBaseConflicts = result.conflicts || [];
+      renderBaseConflicts(result.new_rows || 0);
+      el('baseConflictDialog').showModal();
+      return false;
+    }
+    state.pendingBaseUploadId = '';
+    state.pendingBaseConflicts = [];
+    el('baseInfo').textContent = `BASE DADOS ativa: ${result.base.rows} registros • ${result.base.origin}${result.base.revision && result.base.revision !== 'padrao' ? ` • revisão ${result.base.revision}` : ''}`;
+    invalidateValidation('BASE DADOS alterada e salva com segurança. Os arquivos financeiros protegidos podem ser reprocessados sem novo envio.');
+    await openBaseDialogRefresh();
+    showMessage('Base atualizada', `${result.added} registro(s) adicionado(s), ${result.ignored || 0} semelhante(s) ignorado(s). A Base persistente agora possui ${result.base.rows} registros.`);
+    return true;
+  }
+
+  function renderBaseConflicts(newRows) {
+    el('baseConflictInfo').textContent = `${state.pendingBaseConflicts.length} semelhante(s) encontrado(s); ${newRows} linha(s) realmente nova(s).`;
+    el('baseConflictBody').innerHTML = state.pendingBaseConflicts.map(item => {
+      const sent = item.uploaded || {};
+      const current = item.current || {};
+      const currentText = `${current.supplier_code || ''} • ${current.supplier || ''} • ${current.flow || ''} • ${current.category || ''}`;
+      const input = (field) => `<input class="base-cell-input" data-conflict-row="${item.row_index}" data-field="${field}" value="${esc(sent[field] || '')}" />`;
+      return `<tr><td>${esc(item.reason)}</td><td>${input('supplier_code')}</td><td>${input('supplier')}</td><td>${input('flow')}</td><td>${input('category')}</td><td>${esc(currentText)}</td></tr>`;
+    }).join('');
+  }
+
+  function collectEditedConflicts() {
+    return state.pendingBaseConflicts.map(conflict => {
+      const row = {row_index:conflict.row_index};
+      document.querySelectorAll(`[data-conflict-row="${conflict.row_index}"]`).forEach(input => { row[input.dataset.field] = input.value.trim(); });
+      return row;
+    });
+  }
+
+  async function importBase(file, mode) {
     let uploadId = '';
     try {
       uploadId = await stageEncryptedFile(file, 'base');
-      const result = await api('/api/base/import', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({upload_id:uploadId}),
-      });
-      el('baseInfo').textContent = `BASE DADOS ativa: ${result.base.rows} registros • ${result.base.origin}${result.base.revision && result.base.revision !== 'padrao' ? ` • revisão ${result.base.revision}` : ''}`;
-      invalidateValidation('BASE DADOS alterada. Valide novamente os arquivos antes de gerar o relatório.');
-      await openBaseDialogRefresh();
-      showMessage('Base atualizada', `Nova BASE DADOS validada e atualizada no site e no back-end desta sessão com ${result.base.rows} registros. Valide novamente os arquivos antes de gerar o relatório.`);
+      await submitBaseImport(uploadId, mode);
     } catch (error) {
       if (uploadId) await discardUploads([uploadId]);
+      state.pendingBaseUploadId = '';
       showGuidedError(errorGuide(error, 'base'));
     }
   }
@@ -490,8 +583,9 @@
   async function openBaseDialogRefresh() {
     try {
       const data = await api('/api/base');
-      el('baseDialogInfo').textContent = `BASE DADOS ativa: ${data.rows} registros • ${data.origin}${data.revision && data.revision !== 'padrao' ? ` • revisão ${data.revision}` : ''}`;
-      el('baseTableBody').innerHTML = data.items.map(row => `<tr><td>${esc(row.supplier_code)}</td><td>${esc(row.supplier)}</td><td>${esc(row.flow)}</td><td>${esc(row.category)}</td></tr>`).join('');
+      state.baseItems = data.items;
+      state.baseEditing = false;
+      renderBaseTable(data);
     } catch (_) {}
   }
 
@@ -535,6 +629,9 @@
 
   el('baseBtn').addEventListener('click', openBaseDialog);
   el('baseClose').addEventListener('click', () => el('baseDialog').close());
+  el('editBaseBtn').addEventListener('click', () => { state.baseEditing = true; renderBaseTable(); });
+  el('cancelBaseEditBtn').addEventListener('click', () => { state.baseEditing = false; renderBaseTable(); });
+  el('saveBaseBtn').addEventListener('click', saveBaseEdits);
   el('importBaseBtn').addEventListener('click', () => el('baseFileInput').click());
   el('baseFileInput').addEventListener('change', event => {
     const file = event.target.files && event.target.files[0];
@@ -543,13 +640,42 @@
     state.pendingBaseFile = file;
     el('confirmBaseDialog').showModal();
   });
-  el('confirmBaseYes').addEventListener('click', () => {
+  el('replaceBaseBtn').addEventListener('click', () => {
     el('confirmBaseDialog').close();
     const file = state.pendingBaseFile;
     state.pendingBaseFile = null;
-    if (file) importBase(file);
+    if (file) importBase(file, 'replace');
   });
-  el('confirmBaseDialog').addEventListener('close', () => { if (el('confirmBaseDialog').returnValue === 'no') state.pendingBaseFile = null; });
+  el('appendBaseBtn').addEventListener('click', () => {
+    el('confirmBaseDialog').close();
+    const file = state.pendingBaseFile;
+    state.pendingBaseFile = null;
+    if (file) importBase(file, 'append');
+  });
+  el('confirmBaseDialog').addEventListener('close', () => { if (el('confirmBaseDialog').returnValue === 'cancel') state.pendingBaseFile = null; });
+  el('ignoreBaseConflictsBtn').addEventListener('click', async () => {
+    if (!state.pendingBaseUploadId) return;
+    try {
+      const done = await submitBaseImport(state.pendingBaseUploadId, 'append', 'ignore');
+      if (done) el('baseConflictDialog').close();
+    } catch (error) { showGuidedError(errorGuide(error, 'base')); }
+  });
+  el('saveEditedConflictsBtn').addEventListener('click', async () => {
+    if (!state.pendingBaseUploadId) return;
+    try {
+      const done = await submitBaseImport(state.pendingBaseUploadId, 'append', 'edit', collectEditedConflicts());
+      if (done) el('baseConflictDialog').close();
+    } catch (error) { showGuidedError(errorGuide(error, 'base')); }
+  });
+  async function cancelBaseConflicts() {
+    const uploadId = state.pendingBaseUploadId;
+    state.pendingBaseUploadId = '';
+    state.pendingBaseConflicts = [];
+    if (uploadId) await discardUploads([uploadId]);
+    el('baseConflictDialog').close();
+  }
+  el('baseConflictClose').addEventListener('click', cancelBaseConflicts);
+  el('cancelBaseConflictsBtn').addEventListener('click', cancelBaseConflicts);
 
   renderFiles();
   loadState();

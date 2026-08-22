@@ -9,7 +9,7 @@ import shutil
 import time
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.gzip import GZipMiddleware
@@ -21,9 +21,11 @@ from webapp.crypto_storage import decrypt_uploaded_chunks, iter_unseal_file, val
 from webapp.engine import WebEngine
 from webapp.security import RuntimeSecurity, SlidingWindowLimiter, request_origin_is_allowed
 from webapp.session_store import SessionStore
+from webapp.supabase_gateway import AuthenticationRejected, SupabaseGateway, SupabaseUnavailable
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 INDEX_HTML = PROJECT_ROOT / "webapp" / "templates" / "index.html"
+LOGIN_HTML = PROJECT_ROOT / "webapp" / "templates" / "login.html"
 STATIC_DIR = PROJECT_ROOT / "webapp" / "static"
 RESOURCES_DIR = PROJECT_ROOT / "resources"
 COOKIE_NAME = "cap_session"
@@ -31,7 +33,8 @@ SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9À-ÿ._()\- ]+")
 SESSION_CLEANUP_INTERVAL = 10 * 60
 
 store = SessionStore(PROJECT_ROOT)
-engine = WebEngine(PROJECT_ROOT, store)
+supabase = SupabaseGateway()
+engine = WebEngine(PROJECT_ROOT, store, supabase)
 security = RuntimeSecurity()
 limiter = SlidingWindowLimiter()
 heavy_jobs = asyncio.Semaphore(max(1, min(8, int(os.getenv("MAX_HEAVY_JOBS", "1") or "1"))))
@@ -153,11 +156,23 @@ async def session_security_middleware(request: Request, call_next):
     request.state.session_key = sid
     store.begin_request(sid)
     try:
-        if request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+        public_session_routes = path in {"/", "/api/security/bootstrap", "/api/auth/login"}
+        if not public_session_routes and not store.is_authenticated(sid):
+            response = JSONResponse(
+                status_code=401,
+                content={"detail": "Sua sessão precisa ser autenticada novamente.", "code": "AUTH_REQUIRED"},
+            )
+        elif request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
             if not request_origin_is_allowed(request):
                 response = JSONResponse(status_code=403, content={"detail": "Origem da requisição não autorizada."})
             elif not security.valid_csrf(token, request.headers.get("x-csrf-token")):
-                response = JSONResponse(status_code=403, content={"detail": "A sessão de segurança expirou. Atualize a página e tente novamente."})
+                response = JSONResponse(
+                    status_code=403,
+                    content={
+                        "detail": "A proteção da sessão foi renovada. Tente novamente.",
+                        "code": "CSRF_REFRESH_REQUIRED",
+                    },
+                )
             else:
                 session_ok = limiter.allow(f"session:{sid}", limit=1200, window_seconds=300)
                 peer = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "unknown")).split(",")[0].strip()
@@ -200,9 +215,49 @@ class UploadIdRequest(BaseModel):
     upload_id: str = Field(min_length=32, max_length=32)
 
 
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=512)
+
+
+class BaseRowPayload(BaseModel):
+    supplier_code: str = Field(min_length=1, max_length=120)
+    supplier: str = Field(min_length=1, max_length=500)
+    flow: str = Field(min_length=1, max_length=500)
+    category: str = Field(min_length=1, max_length=500)
+
+
+class EditedDuplicatePayload(BaseRowPayload):
+    row_index: int = Field(ge=0, le=1_000_000)
+
+
+class BaseUpdateRequest(BaseModel):
+    items: list[BaseRowPayload] = Field(min_length=1, max_length=500_000)
+
+
+class BaseImportRequest(BaseModel):
+    upload_id: str = Field(min_length=32, max_length=32)
+    mode: Literal["replace", "append"]
+    duplicate_action: Literal["ask", "ignore", "edit"] = "ask"
+    edited_duplicates: list[EditedDuplicatePayload] = Field(default_factory=list, max_length=100_000)
+
+
+class ReportRefreshRequest(BaseModel):
+    upload_ids: list[str] = Field(default_factory=list, max_length=200)
+
+
+class ClassificationAssignment(BaseRowPayload):
+    pass
+
+
+class ClassificationUpdateRequest(BaseModel):
+    assignments: list[ClassificationAssignment] = Field(min_length=1, max_length=100_000)
+
+
 @app.get("/")
-def home():
-    return FileResponse(INDEX_HTML, media_type="text/html; charset=utf-8")
+def home(request: Request):
+    page = INDEX_HTML if store.is_authenticated(_sid(request)) else LOGIN_HTML
+    return FileResponse(page, media_type="text/html; charset=utf-8")
 
 
 @app.get("/static/{asset:path}")
@@ -239,7 +294,32 @@ def security_bootstrap(request: Request):
         "max_upload_bytes": store.max_upload_bytes,
         "upload_chunk_bytes": store.upload_chunk_bytes,
         "session_idle_seconds": store.session_ttl_seconds,
+        "authenticated": store.is_authenticated(_sid(request)),
     }
+
+
+@app.post("/api/auth/login")
+async def api_login(request: Request, payload: LoginRequest):
+    sid = _sid(request)
+    peer = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "unknown")).split(",")[0].strip()
+    login_key = f"login:{peer}:{payload.username.strip().casefold()}"
+    if not limiter.allow(login_key, limit=12, window_seconds=10 * 60):
+        raise HTTPException(status_code=429, detail="Muitas tentativas de login. Aguarde alguns minutos e tente novamente.")
+    try:
+        identity = await asyncio.to_thread(supabase.sign_in, payload.username, payload.password)
+        with store.lock(sid):
+            store.authenticate(sid, user_id=identity.user_id, username=identity.username)
+            base = await asyncio.to_thread(engine.load_persistent_base, sid)
+        return {"ok": True, "username": identity.username, "base": base}
+    except AuthenticationRejected as exc:
+        raise HTTPException(status_code=401, detail="Usuário ou senha inválidos.") from exc
+    except SupabaseUnavailable as exc:
+        state = store.state(sid)
+        state.authenticated_user_id = ""
+        state.authenticated_username = ""
+        raise HTTPException(status_code=503, detail=_safe_error(exc)) from exc
+    finally:
+        payload.password = ""
 
 
 @app.get("/api/state")
@@ -253,6 +333,7 @@ def api_state(request: Request):
             "validated": state.validated is not None,
             "report_url": state.last_report_url,
             "pdf_url": state.last_pdf_url,
+            "username": state.authenticated_username,
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Não foi possível carregar o estado da sessão.") from exc
@@ -360,33 +441,70 @@ def upload_discard(request: Request, payload: UploadIdsRequest):
     return {"ok": True}
 
 
+async def _materialize_financial_uploads(sid: str, upload_ids: list[str], work: Path) -> list[Path]:
+    materialized: list[Path] = []
+    for position, upload_id in enumerate(upload_ids):
+        record = store.upload_record(sid, upload_id, purpose="financial")
+        if not record.complete:
+            raise RuntimeError(f"O arquivo '{record.filename}' ainda não terminou de ser enviado.")
+        dest = work / f"{position:03d}" / record.filename
+        await asyncio.to_thread(decrypt_uploaded_chunks, record, dest)
+        await asyncio.to_thread(
+            validate_office_container,
+            dest,
+            record.extension,
+            max_file_bytes=store.max_upload_bytes,
+            max_expanded_bytes=store.max_office_expanded_bytes,
+        )
+        materialized.append(dest)
+    return materialized
+
+
+async def _rebuild_report(sid: str, new_upload_ids: list[str] | None = None) -> dict[str, Any]:
+    additions = list(dict.fromkeys(new_upload_ids or []))
+    existing = list(store.state(sid).financial_upload_ids)
+    all_ids = list(dict.fromkeys([*existing, *additions]))
+    if not all_ids:
+        raise RuntimeError("Não há planilhas financeiras protegidas nesta sessão para atualizar o relatório.")
+    work = store.new_work_dir(sid, "report_refresh")
+    try:
+        materialized = await _materialize_financial_uploads(sid, all_ids, work)
+        async with heavy_jobs:
+            with store.lock(sid):
+                validated = await asyncio.to_thread(engine.validate, sid, materialized)
+                result = await asyncio.to_thread(engine.generate, sid)
+                store.replace_financial_uploads(sid, all_ids)
+        stamp = int(time.time())
+        return {
+            "ok": True,
+            "summary": engine.validation_summary(validated),
+            "report_url": f"{result['report_url']}?v={stamp}",
+            "pdf_url": f"{result['pdf_url']}?v={stamp}",
+        }
+    except Exception:
+        store.discard_uploads(sid, [item for item in additions if item not in existing])
+        raise
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 @app.post("/api/validate")
 async def api_validate(request: Request, payload: UploadIdsRequest):
     sid = _sid(request)
     upload_ids = list(dict.fromkeys(payload.upload_ids))
     work = store.new_work_dir(sid, "validation")
-    materialized: list[Path] = []
+    previous_ids = list(store.state(sid).financial_upload_ids)
+    accepted = False
     try:
-        for position, upload_id in enumerate(upload_ids):
-            record = store.upload_record(sid, upload_id, purpose="financial")
-            if not record.complete:
-                raise RuntimeError(f"O arquivo '{record.filename}' ainda não terminou de ser enviado.")
-            dest = work / f"{position:03d}" / record.filename
-            await asyncio.to_thread(decrypt_uploaded_chunks, record, dest)
-            await asyncio.to_thread(
-                validate_office_container,
-                dest,
-                record.extension,
-                max_file_bytes=store.max_upload_bytes,
-                max_expanded_bytes=store.max_office_expanded_bytes,
-            )
-            materialized.append(dest)
+        materialized = await _materialize_financial_uploads(sid, upload_ids, work)
 
         with store.lock(sid):
             store.invalidate_validation(sid, preserve_last_outputs=True)
         async with heavy_jobs:
             with store.lock(sid):
                 validated = await asyncio.to_thread(engine.validate, sid, materialized)
+                store.replace_financial_uploads(sid, upload_ids)
+                accepted = True
         summary = engine.validation_summary(validated)
         return {"ok": True, "summary": summary}
     except Exception as exc:
@@ -395,7 +513,8 @@ async def api_validate(request: Request, payload: UploadIdsRequest):
         raise HTTPException(status_code=400, detail=_safe_error(exc)) from exc
     finally:
         shutil.rmtree(work, ignore_errors=True)
-        store.discard_uploads(sid, upload_ids)
+        if not accepted:
+            store.discard_uploads(sid, [item for item in upload_ids if item not in previous_ids])
 
 
 @app.post("/api/generate")
@@ -411,6 +530,14 @@ async def api_generate(request: Request):
             "report_url": f"{result['report_url']}?v={stamp}",
             "pdf_url": f"{result['pdf_url']}?v={stamp}",
         }
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=_safe_error(exc)) from exc
+
+
+@app.post("/api/report/refresh")
+async def api_report_refresh(request: Request, payload: ReportRefreshRequest):
+    try:
+        return await _rebuild_report(_sid(request), payload.upload_ids)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=_safe_error(exc)) from exc
 
@@ -456,10 +583,32 @@ def api_base(request: Request):
         raise HTTPException(status_code=400, detail=_safe_error(exc)) from exc
 
 
+@app.get("/api/base/options")
+def api_base_options(request: Request):
+    try:
+        return engine.base_options(_sid(request))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=_safe_error(exc)) from exc
+
+
+@app.put("/api/base")
+async def api_base_update(request: Request, payload: BaseUpdateRequest):
+    sid = _sid(request)
+    try:
+        items = [item.model_dump() for item in payload.items]
+        async with heavy_jobs:
+            with store.lock(sid):
+                info = await asyncio.to_thread(engine.update_base, sid, items)
+        return {"ok": True, "base": info}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"A base anterior foi preservada. {_safe_error(exc)}") from exc
+
+
 @app.post("/api/base/import")
-async def api_base_import(request: Request, payload: UploadIdRequest):
+async def api_base_import(request: Request, payload: BaseImportRequest):
     sid = _sid(request)
     work = store.new_work_dir(sid, "base_import")
+    completed = False
     try:
         record = store.upload_record(sid, payload.upload_id, purpose="base")
         if not record.complete:
@@ -475,13 +624,36 @@ async def api_base_import(request: Request, payload: UploadIdRequest):
         )
         async with heavy_jobs:
             with store.lock(sid):
-                info = await asyncio.to_thread(engine.import_base, sid, dest)
-        return {"ok": True, "base": info}
+                result = await asyncio.to_thread(
+                    engine.import_base,
+                    sid,
+                    dest,
+                    mode=payload.mode,
+                    duplicate_action=payload.duplicate_action,
+                    edited_duplicates=[item.model_dump() for item in payload.edited_duplicates],
+                )
+        completed = bool(result.get("ok"))
+        return result
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"A base anterior foi preservada. {_safe_error(exc)}") from exc
     finally:
         shutil.rmtree(work, ignore_errors=True)
-        store.discard_upload(sid, payload.upload_id)
+        if completed:
+            store.discard_upload(sid, payload.upload_id)
+
+
+@app.post("/api/base/classifications")
+async def api_base_classifications(request: Request, payload: ClassificationUpdateRequest):
+    sid = _sid(request)
+    try:
+        assignments = [item.model_dump() for item in payload.assignments]
+        async with heavy_jobs:
+            with store.lock(sid):
+                base = await asyncio.to_thread(engine.apply_classifications, sid, assignments)
+        refreshed = await _rebuild_report(sid)
+        return {**refreshed, "base": base}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"A base anterior e o relatório anterior foram preservados. {_safe_error(exc)}") from exc
 
 
 @app.get("/api/base/export")

@@ -55,6 +55,9 @@ def test_lists_are_complete_in_html_and_static_pdf_is_paginated():
     assert 'def _paginated_table(' in PDF_SOURCE
     assert 'Títulos realizados - lista completa' in PDF_SOURCE
     assert 'Comparativo mensal completo' in PDF_SOURCE
+    assert 'category_chunks = [category_rows[index:index + 8]' in PDF_SOURCE
+    assert 'Barras horizontais; todos os valores exatos aparecem' in PDF_SOURCE
+    assert 'value_bubble' in PDF_SOURCE
 
 
 def test_avisos_are_excluded_from_both_pdf_paths():
@@ -187,6 +190,45 @@ def test_category_chart_compares_named_current_and_previous_months():
     assert "previousLabel=monthLabel(previousMonth+'-01',true)" in TEMPLATE
     assert "currentLabel=monthLabel(currentMonth+'-01',true)" in TEMPLATE
     assert "currentP={},currentR={},previousP={},previousR={}" in TEMPLATE
+
+
+def test_category_chart_is_horizontal_keeps_every_value_label_and_has_own_series_filter():
+    assert 'id="categorySeriesFilter"' in TEMPLATE
+    assert '>Previsto e Realizado</option>' in TEMPLATE
+    assert '>Previsto</option>' in TEMPLATE
+    assert '>Realizado</option>' in TEMPLATE
+    assert 'function categoryBarsHorizontal' in TEMPLATE
+    assert 'categoryBarValueBg' in TEMPLATE
+    assert 'categoryBarValue' in TEMPLATE
+    assert 'el(\'chartCategory\').innerHTML=categoryBarsHorizontal' in TEMPLATE
+    assert 'categoryScreenVisibleIndices(values,slot)' not in TEMPLATE.split('function categoryBarsHorizontal', 1)[1].split('const MONTHS_PT', 1)[0]
+
+
+def test_supplier_period_context_and_waterfall_high_contrast_labels_are_present():
+    assert 'id="supplierPeriodHint"' in TEMPLATE
+    assert 'Acumulado de todos os meses do relatório' in TEMPLATE
+    assert 'Conforme o(s) mês(es) filtrado(s)' in TEMPLATE
+    assert 'function waterfallRefined' in TEMPLATE
+    assert 'waterfallValueBg' in TEMPLATE
+    assert 'waterfallValueText' in TEMPLATE
+
+
+def test_report_allows_complementary_files_base_editing_and_inline_classification():
+    assert 'id="reportBaseBtn"' in TEMPLATE
+    assert 'Adicionar dados complementares' in TEMPLATE
+    assert 'Editar a Base de Dados' in TEMPLATE
+    assert "'/api/report/refresh'" in TEMPLATE
+    assert "'/api/base/classifications'" in TEMPLATE
+    assert 'data-bulk-flow' in TEMPLATE
+    assert 'data-bulk-category' in TEMPLATE
+    assert 'Atualizar relatório' in TEMPLATE
+
+
+def test_updated_reimportable_workbook_download_is_exposed():
+    assert "['atualizado','Planilha atualizada do relatório']" in TEMPLATE
+    excel_source = (ROOT / 'app' / 'services' / 'excel_export.py').read_text(encoding='utf-8')
+    assert 'Relatorio_atualizado_reimportavel.xlsx' in excel_source
+    assert '_write_updated_report_workbook' in excel_source
 
 
 def test_monthly_cards_require_a_filter_and_never_use_generic_latest_month_tag():

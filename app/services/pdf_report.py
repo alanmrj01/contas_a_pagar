@@ -153,19 +153,37 @@ def _kpi(c: canvas.Canvas, x, y, w, h, label, value, note):
 
 
 def _category_chart(c, x, y, w, h, rows):
-    rows = rows[:7]
     if not rows:
         _text(c, x, y + h / 2, "Sem dados", 10, MUTED)
         return
-    maxv = max(max(abs(r["planned"]), abs(r["actual"])) for r in rows) or 1
-    left = x + 43
-    right = x + w - 4
-    bottom = y + 52
-    top = y + h - 24
-    plot_h = top - bottom
+    values = [float(row[key]) for row in rows for key in ("planned", "actual")]
+    domain_min = min([0.0, *values])
+    domain_max = max([0.0, *values])
+    span = domain_max - domain_min or 1.0
+    left = x + 145
+    right = x + w - 92
+    bottom = y + 12
+    top = y + h - 30
     plot_w = right - left
-    slot = plot_w / max(1, len(rows))
-    bw = min(18, slot * .26)
+    row_h = (top - bottom) / max(1, len(rows))
+
+    def xx(value: float) -> float:
+        return left + (value - domain_min) / span * plot_w
+
+    zero_x = xx(0.0)
+
+    def value_bubble(endpoint: float, cy: float, label: str, positive: bool) -> None:
+        font_size = 5.8
+        bubble_w = min(88, max(52, pdfmetrics.stringWidth(label, "Helvetica-Bold", font_size) + 10))
+        desired = endpoint + 4 if positive else endpoint - bubble_w - 4
+        bx = max(x + 1, min(x + w - bubble_w - 1, desired))
+        c.setFillColor(white)
+        c.setStrokeColor(HexColor("#69818F"))
+        c.setLineWidth(.55)
+        c.roundRect(bx, cy - 5.5, bubble_w, 11, 3, fill=1, stroke=1)
+        c.setFont("Helvetica-Bold", font_size)
+        c.setFillColor(TEXT)
+        c.drawCentredString(bx + bubble_w / 2, cy - 2, label)
 
     c.setFillColor(HexColor("#E7F3FA"))
     c.setStrokeColor(ACCENT)
@@ -177,45 +195,38 @@ def _category_chart(c, x, y, w, h, rows):
     c.roundRect(x + w - 80, y + h - 15, 12, 8, 2, fill=1, stroke=1)
     _text(c, x + w - 63, y + h - 14, "Realizado", 6.2, MUTED, True)
 
-    for i in range(5):
-        value = maxv * (1 - i / 4)
-        yy = bottom + plot_h * (1 - i / 4)
+    for i in range(6):
+        value = domain_min + span * i / 5
+        x_tick = xx(value)
         c.setStrokeColor(LINE)
         c.setLineWidth(.7)
-        c.line(left, yy, right, yy)
+        c.line(x_tick, bottom, x_tick, top)
         c.setFont("Helvetica", 5.8)
         c.setFillColor(MUTED)
-        c.drawRightString(left - 5, yy - 2, short_brl(value))
+        c.drawCentredString(x_tick, top + 8, short_brl(value))
 
     for i, row in enumerate(rows):
         color = PASTEL[i % len(PASTEL)]
-        cx = left + slot * i + slot / 2
-        ph = plot_h * max(0, row["planned"]) / maxv
-        ah = plot_h * max(0, row["actual"]) / maxv
-        c.setFillColor(HexColor("#F7FAFC"))
-        c.setStrokeColor(color)
-        c.setLineWidth(1.5)
-        c.roundRect(cx - bw - 2, bottom, bw, ph, 2.5, fill=1, stroke=1)
-        c.setFillColor(color)
-        c.setStrokeColor(color)
-        c.roundRect(cx + 2, bottom, bw, ah, 2.5, fill=1, stroke=1)
-        c.setFont("Helvetica-Bold", 5.6)
-        c.setFillColor(TEXT)
-        p_label_y = min(top - 1, bottom + ph + 5)
-        a_label_y = min(top - 1, bottom + ah + 5)
-        if abs(p_label_y - a_label_y) < 7:
-            a_label_y = max(bottom + 8, a_label_y - 7)
-        c.drawCentredString(cx - bw / 2 - 2, p_label_y, brl(float(row["planned"])))
-        c.drawCentredString(cx + bw / 2 + 2, a_label_y, brl(float(row["actual"])))
-        c.setFont("Helvetica-Bold", 6.2)
-        c.setFillColor(MUTED)
-        c.drawCentredString(cx - bw / 2 - 2, bottom - 11, "P")
-        c.drawCentredString(cx + bw / 2 + 2, bottom - 11, "R")
-        label_y = y + 23
-        for j, label in enumerate(_label_lines(row["label"], 12, 2)):
-            c.setFont("Helvetica-Bold", 6.2)
+        row_top = top - i * row_h
+        middle = row_top - row_h / 2
+        _text_fit(c, x + 1, middle - 2, row["label"], max_width=125, start_size=6.4, min_size=4.8, color=MUTED, bold=True)
+        for series_index, (key, mark, filled) in enumerate((("planned", "P", False), ("actual", "R", True))):
+            value = float(row[key])
+            cy = middle + (5.8 if series_index == 0 else -5.8)
+            endpoint = xx(value)
+            bar_x = min(zero_x, endpoint)
+            bar_w = max(1.0, abs(endpoint - zero_x))
+            c.setFillColor(color if filled else HexColor("#F7FAFC"))
+            c.setStrokeColor(color)
+            c.setLineWidth(1.1 if filled else 1.4)
+            c.roundRect(bar_x, cy - 3.7, bar_w, 7.4, 2.4, fill=1, stroke=1)
+            c.setFont("Helvetica-Bold", 5.6)
             c.setFillColor(MUTED)
-            c.drawCentredString(cx, label_y - j * 7, label)
+            c.drawRightString(left - 5, cy - 2, mark)
+            value_bubble(endpoint, cy, brl(value), value >= 0)
+        c.setStrokeColor(color)
+        c.setLineWidth(.35)
+        c.line(x + 1, row_top - row_h + 1, x + w - 1, row_top - row_h + 1)
 
 
 def _line_chart(c, x, y, w, h, rows):
@@ -352,6 +363,19 @@ def _waterfall(c, x, y, w, h, rows, start):
     def yy(value: float) -> float:
         return bottom + ph * (value - domain_min) / span
 
+    def value_bubble(cx: float, preferred_y: float, label: str, stagger: bool = False) -> None:
+        font_size = 5.7
+        bubble_w = min(78, max(49, pdfmetrics.stringWidth(label, "Helvetica-Bold", font_size) + 9))
+        bx = max(x + 1, min(x + w - bubble_w - 1, cx - bubble_w / 2))
+        by = max(bottom + 1, min(top - 12, preferred_y + (8 if stagger else 0)))
+        c.setFillColor(white)
+        c.setStrokeColor(HexColor("#69818F"))
+        c.setLineWidth(.55)
+        c.roundRect(bx, by, bubble_w, 11, 3, fill=1, stroke=1)
+        c.setFont("Helvetica-Bold", font_size)
+        c.setFillColor(TEXT)
+        c.drawCentredString(bx + bubble_w / 2, by + 3.1, label)
+
     for i in range(5):
         value = domain_min + span * i / 4
         y_tick = yy(value)
@@ -367,7 +391,7 @@ def _waterfall(c, x, y, w, h, rows, start):
     start_y = yy(start)
     c.setFillColor(ACCENT)
     c.roundRect(start_x, min(zero_y, start_y), bw, max(3, abs(start_y - zero_y)), 2.5, fill=1, stroke=0)
-    c.setFont("Helvetica-Bold", 4.9); c.setFillColor(TEXT); c.drawCentredString(start_x + bw / 2, min(top - 1, max(zero_y, start_y) + 5), brl(float(start)))
+    value_bubble(start_x + bw / 2, max(zero_y, start_y) + 4, brl(float(start)))
     _text(c, start_x, y + 13, "Previsto", 5.8, MUTED, True)
 
     prev = float(start)
@@ -383,9 +407,8 @@ def _waterfall(c, x, y, w, h, rows, start):
         bar_color = BAD if value >= 0 else GOOD
         c.setFillColor(bar_color)
         c.roundRect(x0, min(y1, y2), bw, max(3, abs(y2 - y1)), 2.5, fill=1, stroke=0)
-        c.setFont("Helvetica-Bold", 4.7); c.setFillColor(bar_color)
-        value_y = min(top - 1, max(y1, y2) + 5) if value >= 0 else max(bottom + 3, min(y1, y2) - 7)
-        c.drawCentredString(x0 + bw / 2, value_y, brl(value))
+        value_y = (max(y1, y2) + 4 + (8 if i % 2 else 0)) if value >= 0 else (min(y1, y2) - 14 - (8 if i % 2 else 0))
+        value_bubble(x0 + bw / 2, value_y, brl(value))
         for j, label in enumerate(_label_lines(row["label"], 10, 2)):
             c.setFont("Helvetica-Bold", 5.1)
             c.setFillColor(MUTED)
@@ -396,7 +419,7 @@ def _waterfall(c, x, y, w, h, rows, start):
     final_y = yy(actual)
     c.setFillColor(HexColor("#9CD8FF"))
     c.roundRect(final_x, min(zero_y, final_y), bw, max(3, abs(final_y - zero_y)), 2.5, fill=1, stroke=0)
-    c.setFont("Helvetica-Bold", 4.9); c.setFillColor(TEXT); c.drawCentredString(final_x + bw / 2, min(top - 1, max(zero_y, final_y) + 5), brl(float(actual)))
+    value_bubble(final_x + bw / 2, max(zero_y, final_y) + 4, brl(float(actual)), stagger=bool(len(rows) % 2))
     c.setFont("Helvetica-Bold", 5.8)
     c.setFillColor(MUTED)
     c.drawCentredString(final_x + bw / 2, y + 13, "Realizado")
@@ -614,12 +637,16 @@ def generate_pdf(result: ReconcileResult, destination: str | Path) -> Path:
     # não são renderizados no PDF executivo.
     c.showPage()
 
-    page += 1
-    w, h = _new_page(c, "Gráficos financeiros", result.period_label, page)
-    _text(c, 36, h - 98, "1. Previsto x Realizado por categoria", 10, BLUE, True)
-    _text(c, 36, h - 112, "Valores exatos em cada coluna; eixo usado apenas como referência de escala.", 6.8, MUTED)
-    _category_chart(c, 36, h - 625, w - 72, 480, charts["categories"])
-    c.showPage()
+    category_rows = list(charts["categories"])
+    category_chunks = [category_rows[index:index + 8] for index in range(0, len(category_rows), 8)] or [[]]
+    for chunk_index, chunk in enumerate(category_chunks):
+        page += 1
+        w, h = _new_page(c, "Gráficos financeiros", result.period_label, page)
+        suffix = f" ({chunk_index + 1}/{len(category_chunks)})" if len(category_chunks) > 1 else ""
+        _text(c, 36, h - 98, f"1. Previsto x Realizado por categoria{suffix}", 10, BLUE, True)
+        _text(c, 36, h - 112, "Barras horizontais; todos os valores exatos aparecem em rótulos de alto contraste.", 6.8, MUTED)
+        _category_chart(c, 36, h - 625, w - 72, 480, chunk)
+        c.showPage()
 
     page += 1
     w, h = _new_page(c, "Comparativo mensal por fornecedor", result.period_label, page)

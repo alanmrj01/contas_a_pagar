@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Entrar — Contas a Pagar</title>
+  <link rel="icon" href="/resources/contas_a_pagar_logo.png" />
+  <link rel="stylesheet" href="/static/login.css" />
+</head>
+<body>
+  <main class="login-shell">
+    <section class="login-card" aria-labelledby="loginTitle">
+      <img class="login-logo" src="/resources/contas_a_pagar_logo.png" alt="Contas a Pagar" />
+      <div class="eyebrow">CONTAS A PAGAR</div>
+      <h1 id="loginTitle">Acesso seguro</h1>
+      <p>Entre para consultar relatórios financeiros e sua Base de Dados protegida.</p>
+      <form id="loginForm" autocomplete="on">
+        <label for="username">Usuário</label>
+        <input id="username" name="username" type="text" autocomplete="username" required maxlength="64" autofocus />
+        <label for="password">Senha</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="512" />
+        <div id="loginError" class="login-error" role="alert" aria-live="polite"></div>
+        <button id="loginButton" type="submit">Entrar</button>
+      </form>
+      <p class="security-note">Dados criptografados em trânsito e em armazenamento temporário, com descriptografia apenas durante o processamento necessário.</p>
+    </section>
+  </main>
+  <script src="/static/login.js" defer></script>
+</body>
+</html>

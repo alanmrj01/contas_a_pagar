@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import html
 import shutil
 from collections import Counter, defaultdict
@@ -19,6 +18,7 @@ from app.services.validation_service import ValidatedInput
 
 from .report_optimizer import optimize_report_file
 from .session_store import SessionStore
+from .supabase_gateway import SupabaseGateway
 
 
 @dataclass
@@ -31,10 +31,90 @@ class BaseView:
 class WebEngine:
     """Adaptador web que reutiliza o motor determinístico original sem alterá-lo."""
 
-    def __init__(self, project_root: Path, store: SessionStore):
+    def __init__(self, project_root: Path, store: SessionStore, persistence: SupabaseGateway):
         self.project_root = project_root.resolve()
         self.store = store
+        self.persistence = persistence
         self.default_base = self.project_root / "resources" / "base_dados_padrao.xlsx"
+
+    @staticmethod
+    def _base_items(table: TableData) -> list[dict[str, str]]:
+        c_code = find_column(table, "Cód Fornecedor", "Codigo Fornecedor")
+        c_name = find_column(table, "Fornecedor")
+        c_flow = find_column(table, "Fluxo JMM", "Fluxo")
+        c_cat = find_column(table, "Categoria")
+        return [
+            {
+                "supplier_code": WebEngine._code_key(row.get(c_code)),
+                "supplier": str(row.get(c_name) or "").strip(),
+                "flow": str(row.get(c_flow) or "").strip(),
+                "category": str(row.get(c_cat) or "").strip(),
+            }
+            for row in table.rows
+        ]
+
+    @staticmethod
+    def _table_from_items(items: list[dict[str, Any]], *, source_name: str = "BASE_DADOS_EDITADA") -> TableData:
+        headers = ["Cód Fornecedor", "Fornecedor", "Fluxo JMM", "Categoria"]
+        rows = []
+        for index, item in enumerate(items, start=2):
+            rows.append({
+                "Cód Fornecedor": str(item.get("supplier_code") or "").strip(),
+                "Fornecedor": str(item.get("supplier") or "").strip(),
+                "Fluxo JMM": str(item.get("flow") or "").strip(),
+                "Categoria": str(item.get("category") or "").strip(),
+                "__source_file__": source_name,
+                "__source_path__": source_name,
+                "__source_sheet__": "BASE DADOS",
+                "__source_row__": index,
+            })
+        table = TableData(
+            sheet_name="BASE DADOS",
+            headers=headers,
+            rows=rows,
+            source_path=Path(source_name),
+            header_row=1,
+        )
+        validate_base(table)
+        return table
+
+    def load_persistent_base(self, sid: str) -> dict[str, Any]:
+        state = self.store.state(sid)
+        if not state.authenticated_user_id:
+            raise RuntimeError("Autenticação necessária para carregar a BASE DADOS.")
+        loaded = self.persistence.load_base(state.authenticated_user_id)
+        if loaded is None:
+            state.custom_base_table = None
+            state.custom_base_revision = ""
+            return self.base_info(sid)
+        items, revision = loaded
+        table = self._table_from_items(items, source_name="BASE_DADOS_SUPABASE.enc")
+        state.custom_base_table = table
+        state.custom_base_revision = revision
+        return self.base_info(sid)
+
+    def _commit_base(self, sid: str, table: TableData) -> dict[str, Any]:
+        validate_base(table)
+        verify_dir = self.store.new_work_dir(sid, "base_verify")
+        tmp = verify_dir / "base_dados_validada.xlsx"
+        try:
+            _write_base_xlsx(table, tmp)
+            persisted_wb = read_excel(tmp)
+            persisted_table = detect_base_table(persisted_wb)
+            validate_base(persisted_table)
+            state = self.store.state(sid)
+            if not state.authenticated_user_id:
+                raise RuntimeError("Autenticação necessária para salvar a BASE DADOS.")
+            revision = self.persistence.save_base(
+                state.authenticated_user_id,
+                self._base_items(persisted_table),
+            )
+            state.custom_base_table = persisted_table
+            state.custom_base_revision = revision
+        finally:
+            shutil.rmtree(verify_dir, ignore_errors=True)
+        self.store.invalidate_validation(sid, preserve_last_outputs=True)
+        return self.base_info(sid)
 
     def active_base(self, sid: str) -> BaseView:
         state = self.store.state(sid)
@@ -51,7 +131,7 @@ class WebEngine:
         return {
             "rows": len(base.table.rows),
             "is_custom": base.is_custom,
-            "origin": "personalizada" if base.is_custom else "padrão",
+            "origin": "persistida no Supabase" if base.is_custom else "padrão",
             "sheet": base.table.sheet_name,
             "revision": state.custom_base_revision if base.is_custom else "padrao",
         }
@@ -74,27 +154,143 @@ class WebEngine:
         ]
         return {**self.base_info(sid), "items": rows}
 
-    def import_base(self, sid: str, uploaded_path: Path) -> dict[str, Any]:
+    def base_options(self, sid: str) -> dict[str, list[str]]:
+        items = self.base_rows(sid)["items"]
+        return {
+            "flows": sorted({item["flow"] for item in items if item["flow"]}, key=str.casefold),
+            "categories": sorted({item["category"] for item in items if item["category"]}, key=str.casefold),
+        }
+
+    def import_base(
+        self,
+        sid: str,
+        uploaded_path: Path,
+        *,
+        mode: str,
+        duplicate_action: str = "ask",
+        edited_duplicates: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         wb = read_excel(uploaded_path)
         table = detect_base_table(wb)
         validate_base(table)
+        imported_items = self._base_items(table)
+        edits = {
+            int(item.get("row_index")): item
+            for item in (edited_duplicates or [])
+            if str(item.get("row_index", "")).isdigit()
+        }
+        if edits:
+            imported_items = [
+                {
+                    "supplier_code": str(edits[index].get("supplier_code") or "").strip(),
+                    "supplier": str(edits[index].get("supplier") or "").strip(),
+                    "flow": str(edits[index].get("flow") or "").strip(),
+                    "category": str(edits[index].get("category") or "").strip(),
+                }
+                if index in edits else item
+                for index, item in enumerate(imported_items)
+            ]
+            # A edição não pode introduzir campos vazios ou códigos duplicados.
+            self._table_from_items(imported_items, source_name="BASE_DADOS_IMPORTADA_EDITADA")
 
-        # Mantém a mesma serialização/segunda leitura de segurança da versão web
-        # anterior, mas sem persistir a base personalizada em plaintext no disco.
-        verify_dir = self.store.new_work_dir(sid, "base_verify")
-        tmp = verify_dir / "base_dados_validada.xlsx"
-        try:
-            _write_base_xlsx(table, tmp)
-            persisted_wb = read_excel(tmp)
-            persisted_table = detect_base_table(persisted_wb)
-            validate_base(persisted_table)
-            state = self.store.state(sid)
-            state.custom_base_table = persisted_table
-            state.custom_base_revision = hashlib.sha256(tmp.read_bytes()).hexdigest()[:12]
-        finally:
-            shutil.rmtree(verify_dir, ignore_errors=True)
-        self.store.invalidate_validation(sid, preserve_last_outputs=True)
-        return self.base_info(sid)
+        if mode == "replace":
+            info = self._commit_base(sid, self._table_from_items(imported_items, source_name="BASE_DADOS_IMPORTADA"))
+            return {"ok": True, "base": info, "added": len(imported_items), "ignored": 0}
+        if mode != "append":
+            raise RuntimeError("Escolha inválida para importação da BASE DADOS.")
+
+        current_items = self._base_items(self.active_base(sid).table)
+        by_code = {self._code_key(item["supplier_code"]): item for item in current_items}
+        by_name = {normalize_supplier(item["supplier"]): item for item in current_items if normalize_supplier(item["supplier"])}
+        conflicts: list[dict[str, Any]] = []
+        additions: list[dict[str, str]] = []
+        conflict_indexes: set[int] = set()
+        for index, item in enumerate(imported_items):
+            code = self._code_key(item["supplier_code"])
+            name_key = normalize_supplier(item["supplier"])
+            current = by_code.get(code) or by_name.get(name_key)
+            if current is not None:
+                reason = "Mesmo Cód Fornecedor" if code in by_code else "Mesmo Fornecedor"
+                conflicts.append({
+                    "row_index": index,
+                    "reason": reason,
+                    "current": dict(current),
+                    "uploaded": dict(item),
+                })
+                conflict_indexes.add(index)
+            else:
+                additions.append(item)
+
+        if conflicts and duplicate_action in {"ask", "edit"}:
+            return {
+                "ok": False,
+                "requires_resolution": True,
+                "conflicts": conflicts,
+                "new_rows": len(additions),
+            }
+        if duplicate_action not in {"ask", "ignore", "edit"}:
+            raise RuntimeError("Ação inválida para valores já existentes na BASE DADOS.")
+
+        merged = [*current_items, *additions]
+        if len(merged) == len(current_items):
+            return {
+                "ok": True,
+                "base": self.base_info(sid),
+                "added": 0,
+                "ignored": len(conflict_indexes),
+            }
+        info = self._commit_base(sid, self._table_from_items(merged, source_name="BASE_DADOS_MESCLADA"))
+        return {
+            "ok": True,
+            "base": info,
+            "added": len(additions),
+            "ignored": len(conflict_indexes),
+        }
+
+    def update_base(self, sid: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+        if not items:
+            raise RuntimeError("A BASE DADOS precisa conter ao menos um fornecedor.")
+        return self._commit_base(sid, self._table_from_items(items))
+
+    def apply_classifications(self, sid: str, assignments: list[dict[str, Any]]) -> dict[str, Any]:
+        if not assignments:
+            raise RuntimeError("Selecione ao menos uma linha para atualizar.")
+        options = self.base_options(sid)
+        allowed_flows = set(options["flows"])
+        allowed_categories = set(options["categories"])
+        grouped: dict[str, dict[str, str]] = {}
+        for assignment in assignments:
+            code = self._code_key(assignment.get("supplier_code"))
+            candidate = {
+                "supplier_code": code,
+                "supplier": str(assignment.get("supplier") or "").strip(),
+                "flow": str(assignment.get("flow") or "").strip(),
+                "category": str(assignment.get("category") or "").strip(),
+            }
+            if not all(candidate.values()):
+                raise RuntimeError("Cód Fornecedor, Fornecedor, Fluxo JMM e Categoria são obrigatórios nas linhas selecionadas.")
+            if candidate["flow"] not in allowed_flows or candidate["category"] not in allowed_categories:
+                raise RuntimeError("Fluxo JMM ou Categoria não pertence às opções atuais da BASE DADOS.")
+            previous = grouped.get(code)
+            if previous and (previous["flow"].casefold(), previous["category"].casefold()) != (
+                candidate["flow"].casefold(), candidate["category"].casefold()
+            ):
+                raise RuntimeError(f"O fornecedor de código {code} recebeu classificações conflitantes na mesma atualização.")
+            grouped[code] = candidate
+
+        items = self._base_items(self.active_base(sid).table)
+        index_by_code = {self._code_key(item["supplier_code"]): index for index, item in enumerate(items)}
+        for code, candidate in grouped.items():
+            existing_index = index_by_code.get(code)
+            if existing_index is None:
+                index_by_code[code] = len(items)
+                items.append(candidate)
+            else:
+                current = dict(items[existing_index])
+                current["flow"] = candidate["flow"]
+                current["category"] = candidate["category"]
+                items[existing_index] = current
+        return self._commit_base(sid, self._table_from_items(items, source_name="BASE_DADOS_CLASSIFICADA_NO_RELATORIO"))
 
     def export_base(self, sid: str) -> Path:
         table = self.active_base(sid).table

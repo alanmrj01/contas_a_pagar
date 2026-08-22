@@ -4,7 +4,7 @@
 Adicionar defesa em profundidade à edição web sem alterar o motor determinístico financeiro, o fluxo funcional ou o relatório visual aprovado.
 
 ## 2. Modelo de acesso
-A ferramenta não implementa banco de usuários, cadastro ou senha. O acesso cria uma sessão anônima temporária. Isso isola os dados entre navegadores, mas não restringe quem pode abrir a URL pública. Caso a organização exija autorização por identidade, SSO/Entra/controle corporativo deve ser adicionado externamente no futuro, sem alterar a interface da aplicação.
+A URL pública mostra somente a tela de login. Usuário e senha são validados pelo Supabase Auth; a aplicação não armazena a senha nem o token de acesso retornado. Depois do login, o navegador recebe uma sessão temporária isolada, vinculada internamente ao identificador do usuário autenticado.
 
 ## 3. Sessão
 - Token aleatório: `secrets.token_urlsafe(32)`.
@@ -67,7 +67,9 @@ Os endpoints `/report/current` e `/report/<artefato>`:
 4. enviam o resultado ao navegador com `Cache-Control: no-store`.
 
 ## 8. BASE DADOS personalizada
-A base personalizada é validada com as mesmas regras do motor existente. Depois da verificação, a estrutura `TableData` permanece somente na memória da sessão; não é mantida como arquivo plaintext persistente da sessão.
+A base personalizada é validada com as mesmas regras do motor existente. Antes da persistência, os registros são serializados e cifrados com AES-256-GCM usando uma chave exclusiva do ambiente do servidor e AAD vinculada ao usuário. O Supabase recebe somente ciphertext, nonce, revisão, contagem e horário. A base em texto claro permanece apenas pelo tempo de processamento e na memória da sessão autenticada.
+
+Consulte `CONFIGURACAO_SUPABASE.md` para RLS, variáveis secretas e recuperação.
 
 A base padrão necessária ao produto permanece no pacote do servidor, mas não possui rota pública de download.
 

@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 HTML = (ROOT / "webapp" / "templates" / "index.html").read_text(encoding="utf-8")
 JS = (ROOT / "webapp" / "static" / "app.js").read_text(encoding="utf-8")
 CSS = (ROOT / "webapp" / "static" / "styles.css").read_text(encoding="utf-8")
+LOGIN_HTML = (ROOT / "webapp" / "templates" / "login.html").read_text(encoding="utf-8")
+LOGIN_JS = (ROOT / "webapp" / "static" / "login.js").read_text(encoding="utf-8")
 
 
 def sha(path: Path) -> str:
@@ -99,3 +101,22 @@ def test_error_dialog_is_guided_in_three_steps_and_keeps_technical_details_colla
     assert "guide.steps.map" in JS
     assert "Detalhes técnicos" in JS
     assert "clearFilesAfterReadFailure" in JS
+
+
+def test_login_precedes_the_application_and_credentials_are_not_hardcoded():
+    assert "Acesso seguro" in LOGIN_HTML
+    assert 'autocomplete="username"' in LOGIN_HTML
+    assert 'autocomplete="current-password"' in LOGIN_HTML
+    assert "/api/auth/login" in LOGIN_JS
+    project_text = "\n".join([
+        (ROOT / "main.py").read_text(encoding="utf-8"),
+        LOGIN_HTML,
+        LOGIN_JS,
+    ])
+    assert "positivo123" not in project_text
+
+
+def test_expired_csrf_is_renewed_once_without_mislabeling_it_as_file_origin_failure():
+    assert "CSRF_REFRESH_REQUIRED" in JS
+    assert "return api(url, options, true)" in JS
+    assert "response.status === 401" in JS

@@ -1,18 +1,18 @@
 # Contas a Pagar Web 2.0.2.0
 
-Versão web do Contas a Pagar 2.0.2.0. O núcleo determinístico de leitura, detecção de layout, normalização, classificação, reconciliação, métricas, PDF, Excel e o template do relatório permanecem preservados. As alterações desta edição são exclusivamente de segurança da aplicação web, isolamento de sessão e desempenho do relatório no navegador.
+Versão web do Contas a Pagar. O núcleo determinístico de leitura, detecção de layout, normalização, classificação, reconciliação e métricas permanece preservado. Esta edição acrescenta autenticação Supabase, persistência cifrada da BASE DADOS e os refinamentos de relatório explicitamente aprovados.
 
 ## Fluxo funcional preservado
 1. Adicionar um ou mais arquivos financeiros (`.xlsx`, `.xls`, `.xlsm`, `.xlsb`).
 2. Validar os arquivos com o mesmo motor determinístico da versão de referência.
 3. Gerar o relatório. A aba atual navega para o relatório com os mesmos temas, filtros, gráficos, cards, cálculos e exportações.
 
-A BASE DADOS continua separada, podendo ser consultada, exportada e substituída durante a sessão. Uma base personalizada não é compartilhada entre sessões.
+A BASE DADOS continua separada e pode ser consultada, editada, exportada, substituída ou complementada. Alterações confirmadas são cifradas com AES-256-GCM e persistidas por usuário no Supabase.
 
 ## Segurança da edição web
 
-### Sessão anônima e temporária
-- Não existe cadastro, login ou senha dentro da ferramenta.
+### Sessão autenticada e temporária
+- A tela inicial exige usuário e senha validados pelo Supabase Auth; a senha não é armazenada pela aplicação.
 - Cada navegador recebe um token de sessão criptograficamente aleatório em cookie `HttpOnly`, `Secure` em HTTPS e `SameSite=Strict`.
 - O token bruto não é usado como nome de pasta; o servidor usa seu SHA-256 como identificador interno.
 - O ID da sessão não aparece na URL.
@@ -50,7 +50,7 @@ HTTPS/TLS continua obrigatório na hospedagem. A criptografia de aplicação é 
 Mais detalhes: `docs/SEGURANCA_WEB_2.0.2.md`.
 
 ## Desempenho do relatório
-O template visual original não foi modificado. Depois de o motor gerar o HTML, uma etapa web de otimização aplica somente melhorias de execução no navegador:
+Depois de o motor gerar o HTML, uma etapa web de otimização mantém:
 - reutilização de formatadores de moeda, percentual e data;
 - índice de pesquisa pré-calculado por registro;
 - cache dos termos pesquisados;
@@ -58,7 +58,7 @@ O template visual original não foi modificado. Depois de o motor gerar o HTML, 
 - resize de layout limitado a um frame por ciclo do navegador;
 - compressão HTTP para respostas textuais grandes.
 
-Não há mudança de gráfico, cor, tema, card, filtro, cálculo ou organização visual.
+Os cálculos permanecem determinísticos. As mudanças visuais ficam restritas aos gráficos, rótulos e controles solicitados nesta edição.
 
 ## Executar no Windows
 Execute `run_web.bat`. O script cria `.venv`, instala `requirements.txt`, inicia o FastAPI e abre `http://127.0.0.1:8000`.
@@ -73,7 +73,7 @@ O projeto já contém `render.yaml` e `start.sh`.
 - Health check: `/healthz`
 - Um worker por padrão. Não aumente o número de workers/instâncias sem migrar o estado de sessão para um armazenamento compartilhado seguro ou adotar afinidade de sessão.
 
-As configurações de segurança possuem defaults seguros e não exigem segredos no Render. Variáveis opcionais estão documentadas em `.env.example`.
+Autenticação e persistência exigem as variáveis secretas do Supabase e a chave de cifra da BASE DADOS. Consulte `docs/CONFIGURACAO_SUPABASE.md` e `.env.example`.
 
 ## Armazenamento
 Por padrão, os dados temporários ficam em `runtime_data/`, que está ignorado pelo Git. Não use disco persistente para sessões financeiras temporárias sem uma revisão específica de segurança.

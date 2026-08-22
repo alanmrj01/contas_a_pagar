@@ -81,6 +81,8 @@ class SessionState:
     last_report_url: str = ""
     last_pdf_url: str = ""
     last_source_names: list[str] = field(default_factory=list)
+    authenticated_user_id: str = ""
+    authenticated_username: str = ""
     custom_base_table: Any | None = None
     custom_base_revision: str = ""
     artifact_key: bytearray = field(default_factory=lambda: bytearray(os.urandom(32)))
@@ -88,6 +90,7 @@ class SessionState:
     report_artifact_root: Path | None = None
     report_script_hashes: list[str] = field(default_factory=list)
     uploads: dict[str, UploadRecord] = field(default_factory=dict)
+    financial_upload_ids: list[str] = field(default_factory=list)
 
     def wipe_artifact_key(self) -> None:
         for i in range(len(self.artifact_key)):
@@ -158,6 +161,19 @@ class SessionStore:
                 raise KeyError("Sessão expirada.")
             state.last_activity = time.time()
             return state
+
+    def is_authenticated(self, key: str) -> bool:
+        try:
+            return bool(self.state(key).authenticated_user_id)
+        except KeyError:
+            return False
+
+    def authenticate(self, key: str, *, user_id: str, username: str) -> SessionState:
+        state = self.state(key)
+        state.authenticated_user_id = str(user_id)
+        state.authenticated_username = str(username)
+        state.last_activity = time.time()
+        return state
 
     def touch(self, key: str) -> None:
         with self._guard:
@@ -256,6 +272,7 @@ class SessionStore:
         except KeyError:
             return
         record = state.uploads.pop(upload_id, None)
+        state.financial_upload_ids = [item for item in state.financial_upload_ids if item != upload_id]
         if record:
             record.wipe_key()
             shutil.rmtree(record.encrypted_dir, ignore_errors=True)
@@ -272,6 +289,23 @@ class SessionStore:
         self.discard_uploads(key, ids)
         shutil.rmtree(self.upload_dir(key), ignore_errors=True)
         self.upload_dir(key)
+
+    def replace_financial_uploads(self, key: str, upload_ids: list[str]) -> None:
+        state = self.state(key)
+        unique = list(dict.fromkeys(upload_ids))
+        for upload_id in unique:
+            record = self.upload_record(key, upload_id, purpose="financial")
+            if not record.complete:
+                raise RuntimeError("Um dos arquivos financeiros protegidos está incompleto.")
+        previous = list(state.financial_upload_ids)
+        state.financial_upload_ids = unique
+        for old_id in previous:
+            if old_id not in unique:
+                self.discard_upload(key, old_id)
+
+    def financial_uploads(self, key: str) -> list[UploadRecord]:
+        state = self.state(key)
+        return [self.upload_record(key, upload_id, purpose="financial") for upload_id in state.financial_upload_ids]
 
     def replace_report_artifacts(self, key: str, source_dir: Path, script_hashes: list[str]) -> None:
         state = self.state(key)
@@ -344,8 +378,11 @@ class SessionStore:
                 record.wipe_key()
             state.wipe_artifact_key()
             state.validated = None
+            state.authenticated_user_id = ""
+            state.authenticated_username = ""
             state.custom_base_table = None
             state.custom_base_revision = ""
+            state.financial_upload_ids = []
         shutil.rmtree(self.sessions_root / key, ignore_errors=True)
 
     def cleanup_expired(self) -> int:

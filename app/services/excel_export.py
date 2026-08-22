@@ -54,6 +54,57 @@ def _write_xlsx(path: Path, sheet_name: str, columns: list[tuple[str, str]], row
     wb.close()
 
 
+def _write_updated_report_workbook(path: Path, result: ReconcileResult) -> None:
+    """Exporta um único arquivo reimportável sem alterar valores normalizados."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wb = xlsxwriter.Workbook(path)
+    header = wb.add_format(HEADER_FMT)
+    money = wb.add_format(MONEY_FMT)
+    date_fmt = wb.add_format(DATE_FMT)
+    wrap = wb.add_format({"text_wrap": True, "valign": "top"})
+    normal = wb.add_format({"valign": "top"})
+
+    sheets = [
+        ("PREVISTO", [
+            ("title", "Título Previsto"), ("supplier_code", "Cód Fornecedor"),
+            ("supplier", "Fornecedor"), ("date", "Data prevista"), ("value", "Valor previsto"),
+            ("month_text", "Mês"), ("flow", "Fluxo JMM"), ("category", "Categoria"),
+            ("source_file", "Arquivo origem"), ("source_sheet", "Aba origem"), ("source_row", "Linha origem"),
+        ], result.previsto),
+        ("REALIZADO", [
+            ("title", "Título"), ("supplier_code", "Fornecedor"), ("supplier", "Nome Fornecedor"),
+            ("value", "Vlr.Original"), ("emission_date", "Emissão"), ("date", "Ult. Pgto."),
+            ("due_date", "Vencimento"), ("company", "Empresa"), ("branch", "Filial"),
+            ("status", "Sit."), ("account", "Desc. Conta Contábil"),
+            ("financial_account", "Desc. Conta Financeira"), ("cost_center", "Desc. Centro de Custo"),
+            ("flow", "Fluxo JMM"), ("category", "Categoria"),
+            ("source_file", "Arquivo origem"), ("source_sheet", "Aba origem"), ("source_row", "Linha origem"),
+        ], result.realizado),
+    ]
+    date_keys = {"date", "due_date", "emission_date"}
+    for sheet_name, columns, rows in sheets:
+        ws = wb.add_worksheet(sheet_name)
+        ws.freeze_panes(1, 0)
+        ws.autofilter(0, 0, max(0, len(rows)), len(columns) - 1)
+        for col_idx, (_, title) in enumerate(columns):
+            ws.write(0, col_idx, title, header)
+            width = 30 if "Fornecedor" in title or "Arquivo" in title else min(42, max(12, len(title) + 3))
+            ws.set_column(col_idx, col_idx, width)
+        for row_idx, row in enumerate(rows, start=1):
+            for col_idx, (key, _) in enumerate(columns):
+                value = row.get(key)
+                if key == "value":
+                    ws.write_number(row_idx, col_idx, float(value or 0.0), money)
+                elif key in date_keys and value:
+                    try:
+                        ws.write_datetime(row_idx, col_idx, datetime.fromisoformat(str(value)), date_fmt)
+                    except ValueError:
+                        ws.write(row_idx, col_idx, str(value), normal)
+                else:
+                    ws.write(row_idx, col_idx, "" if value is None else value, wrap if isinstance(value, str) and len(value) > 40 else normal)
+    wb.close()
+
+
 def export_report_workbooks(result: ReconcileResult, output_dir: Path) -> dict[str, str]:
     exports = output_dir / "excel"
     exports.mkdir(parents=True, exist_ok=True)
@@ -107,9 +158,13 @@ def export_report_workbooks(result: ReconcileResult, output_dir: Path) -> dict[s
         ("title", "Título"), ("supplier_code", "Cód Fornecedor"), ("supplier", "Fornecedor"), ("value", "Valor"), ("suggestions", "Sugestões não aplicadas"),
     ], alert_rows)
 
+    updated_path = exports / "Relatorio_atualizado_reimportavel.xlsx"
+    _write_updated_report_workbook(updated_path, result)
+
     return {
         "previsto": str(p_path.relative_to(output_dir)).replace("\\", "/"),
         "realizado": str(r_path.relative_to(output_dir)).replace("\\", "/"),
         "fornecedores": str(s_path.relative_to(output_dir)).replace("\\", "/"),
         "alertas": str(a_path.relative_to(output_dir)).replace("\\", "/"),
+        "atualizado": str(updated_path.relative_to(output_dir)).replace("\\", "/"),
     }

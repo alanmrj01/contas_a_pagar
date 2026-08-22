@@ -103,6 +103,9 @@
       </div>
       <div class="modal-actions base-actions">
         <a class="btn link-btn" href="/api/base/export">Exportar Base em Excel</a>
+        <button id="editBaseBtn" type="button" class="btn">Editar</button>
+        <button id="saveBaseBtn" type="button" class="btn ready" hidden>Salvar alterações</button>
+        <button id="cancelBaseEditBtn" type="button" class="btn" hidden>Cancelar edição</button>
         <button id="importBaseBtn" type="button" class="btn">Importar nova Base</button>
         <input id="baseFileInput" type="file" accept=".xlsx,.xls,.xlsm,.xlsb" hidden />
       </div>
@@ -117,14 +120,36 @@
 
   <dialog id="confirmBaseDialog" class="modal small-modal">
     <form method="dialog" class="modal-card">
-      <div class="modal-head"><h2>Substituir Base de Dados</h2><button class="icon-close" value="no" aria-label="Fechar">×</button></div>
-      <p>A nova base passará a ser usada nas próximas validações deste navegador. A base anterior será preservada se a nova não for válida.</p>
-      <p>Deseja continuar?</p>
+      <div class="modal-head"><h2>Como importar a nova Base?</h2><button class="icon-close" value="cancel" aria-label="Fechar">×</button></div>
+      <p><b>Substituir tudo</b> troca a Base atual inteira. <b>Adicionar novos</b> preserva os dados atuais e inclui apenas fornecedores novos.</p>
+      <p>A base anterior sempre será preservada se o arquivo enviado não passar na validação.</p>
       <div class="modal-actions">
-        <button id="confirmBaseYes" type="button" class="btn ready">Sim</button>
-        <button value="no" class="btn">Não</button>
+        <button id="replaceBaseBtn" type="button" class="btn ready">Substituir tudo</button>
+        <button id="appendBaseBtn" type="button" class="btn">Adicionar novos</button>
+        <button value="cancel" class="btn">Cancelar</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="baseConflictDialog" class="modal base-modal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div><h2>Valores já existentes</h2><p id="baseConflictInfo"></p></div>
+        <button id="baseConflictClose" type="button" class="icon-close" aria-label="Fechar">×</button>
+      </div>
+      <p>Você pode ignorar os semelhantes e manter os dados atuais ou editar somente as linhas do arquivo enviado para que deixem de ser iguais.</p>
+      <div class="base-table-wrap">
+        <table class="base-table conflict-table">
+          <thead><tr><th>Motivo</th><th>Cód Fornecedor enviado</th><th>Fornecedor enviado</th><th>Fluxo JMM</th><th>Categoria</th><th>Valor atual</th></tr></thead>
+          <tbody id="baseConflictBody"></tbody>
+        </table>
+      </div>
+      <div class="modal-actions">
+        <button id="ignoreBaseConflictsBtn" type="button" class="btn">Ignorar semelhantes</button>
+        <button id="saveEditedConflictsBtn" type="button" class="btn ready">Validar linhas editadas</button>
+        <button id="cancelBaseConflictsBtn" type="button" class="btn">Cancelar</button>
+      </div>
+    </div>
   </dialog>
 
   <dialog id="messageDialog" class="modal small-modal">

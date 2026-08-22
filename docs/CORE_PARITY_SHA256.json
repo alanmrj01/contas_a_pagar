@@ -23,8 +23,23 @@
     },
     "app/report/report_template.html": {
       "desktop_2_0_2_sha256": "EE17F692ED1B48D4BE03F2A5B20B22940674844F4805C2B84990552A40FD720B",
-      "current_sha256": "3E49A1C60BFE22C63BE2372644FADC0702776B8563B46561B6A83B7D6E7D1887",
-      "reason": "Alteração cirúrgica aprovada somente no gráfico Previsto x Realizado por categoria: rótulos de dados em balões de alto contraste nos temas claro e escuro, mantendo tooltip, organização, regra dos meses, cores das colunas e motor financeiro inalterados."
+      "current_sha256": "EDFFBCFF57925B09BF9F566D2C1DABA2A20C3C5AC414E7FD70579146210B6BA4",
+      "reason": "Alterações cirúrgicas aprovadas no relatório: gráfico por categoria horizontal com filtro Previsto/Realizado, rótulos de desvio refinados, indicação dos meses, edição/classificação da Base de Dados, planilhas complementares e atualização integral após cada operação. O motor financeiro permanece inalterado."
+    },
+    "app/services/excel_export.py": {
+      "desktop_2_0_2_sha256": "96104948972EA7CF7E8D3E8A68EC59506DBC1A57D3944C66C7FA482F7CA98904",
+      "current_sha256": "7E2C84EA7286CBE0FB23B5A8155ACF9A7FB80FE239B50BA2B1FFB4F1DC32980E",
+      "reason": "Alteração cirúrgica aprovada: nova planilha atualizada e reimportável, preservando os dados normalizados e as classificações realizadas no relatório."
+    },
+    "app/services/pdf_report.py": {
+      "desktop_2_0_2_sha256": "E31AA54DAA3F12B24EBD798C052A7930529E37906C53CF2CBA419522BF40F763",
+      "current_sha256": "C20E6AC23A8DB5FDC2C8CEFA61B8CE24EC5CAAE4FE9FFF346BD4C38267AC90DB",
+      "reason": "Alteração cirúrgica aprovada: gráfico por categoria horizontal e paginação dos rótulos para que todos os valores permaneçam visíveis no PDF."
+    },
+    "resources/base_dados_padrao.xlsx": {
+      "desktop_2_0_2_sha256": "612CD84D04B1E01CB2CF1EDA829FACFA7F657135FE580466926DDB6301339A8B",
+      "current_sha256": "BCE664320D8064C90631D6818C5D18086629594908778D1F59924FE83EA007E6",
+      "reason": "Alteração de dados solicitada: inclusão somente dos três fornecedores ausentes enviados pelo usuário, sem sobrescrever as 180 classificações existentes."
     }
   }
 }
