@@ -1,9 +1,10 @@
 # Configuração externa — Supabase e Render
 
-Este projeto usa o Supabase somente para duas responsabilidades:
+Este projeto usa o Supabase somente para três responsabilidades:
 
-1. autenticar usuário e senha pelo Supabase Auth;
-2. guardar a BASE DADOS persistente já cifrada pela aplicação com AES-256-GCM.
+1. autenticar e-mail completo e senha pelo Supabase Auth;
+2. autorizar o usuário pela tabela `public.usuarios_autorizados`;
+3. guardar a BASE DADOS persistente já cifrada pela aplicação com AES-256-GCM.
 
 A senha nunca é gravada no projeto. A chave secreta do Supabase e a chave que cifra a BASE DADOS existem somente nas variáveis protegidas do Render.
 
@@ -43,11 +44,11 @@ Não crie política pública de leitura. A aplicação acessa essa tabela soment
 
 1. No painel, abra **Authentication > Users**.
 2. Escolha **Add user > Create new user**.
-3. Use o e-mail técnico `alan@contasapagar.local`.
+3. Use o e-mail completo real que será informado na tela de login.
 4. Informe a senha inicial combinada diretamente com o administrador e marque o e-mail como confirmado.
 5. Não escreva essa senha em arquivos, commits ou variáveis de ambiente da aplicação.
 
-Na tela do sistema, o usuário digita apenas `alan`. O backend acrescenta o domínio técnico definido em `SUPABASE_USERNAME_DOMAIN` e o Supabase valida a senha. Para usuários futuros, repita o mesmo padrão: `nome@contasapagar.local` no Supabase e `nome` na tela.
+Depois de criar o usuário, copie seu UID e cadastre uma linha em `public.usuarios_autorizados` com o mesmo `user_id`, o e-mail, o nome, `ativo=true` e perfil `administrador` ou `basico`. A tela recebe o e-mail completo e não acrescenta nem restringe domínios.
 
 ## 4. Gerar a chave da BASE DADOS
 
@@ -74,17 +75,16 @@ No serviço do Render, abra **Environment** e crie:
 | `SUPABASE_URL` | URL `https://...supabase.co` |
 | `SUPABASE_PUBLISHABLE_KEY` | chave `sb_publishable_...` |
 | `SUPABASE_SECRET_KEY` | chave `sb_secret_...` |
-| `SUPABASE_USERNAME_DOMAIN` | `contasapagar.local` |
 | `PERSISTENT_BASE_KEY_B64` | chave aleatória gerada no passo 4 |
 
-Mantenha as variáveis já existentes de sessão, upload e processamento. O `render.yaml` marca os três segredos como `sync: false`, portanto eles precisam ser informados manualmente no painel.
+Mantenha as variáveis já existentes de sessão, upload e processamento. O `render.yaml` marca as quatro variáveis da tabela acima como `sync: false`, portanto elas precisam ser informadas manualmente no painel.
 
 ## 6. Publicar e verificar
 
 1. Faça o deploy pelo fluxo GitHub → Render.
 2. Confirme que `/healthz` retorna status `ok`.
 3. Abra a URL principal e confirme que o site mostra primeiro a tela de login.
-4. Entre com `alan` e a senha criada no Supabase.
+4. Entre com o e-mail completo e a senha criada no Supabase.
 5. Abra **Base de Dados**, edite um campo de teste autorizado e salve.
 6. Feche o navegador, abra uma nova sessão, entre novamente e confirme que a alteração foi restaurada.
 7. No Supabase, verifique que a linha contém somente `ciphertext`, `nonce`, revisão, contagem e horário — nunca fornecedores ou classificações em texto aberto.

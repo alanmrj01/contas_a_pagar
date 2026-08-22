@@ -16,10 +16,19 @@
       <h1 id="loginTitle">Acesso seguro</h1>
       <p>Entre para consultar relatórios financeiros e sua Base de Dados protegida.</p>
       <form id="loginForm" autocomplete="on">
-        <label for="username">Usuário</label>
-        <input id="username" name="username" type="text" autocomplete="username" required maxlength="64" autofocus />
+        <label for="email">E-mail</label>
+        <input id="email" name="email" type="email" autocomplete="email" placeholder="usuario@empresa.com.br" required maxlength="320" inputmode="email" autocapitalize="none" spellcheck="false" autofocus />
         <label for="password">Senha</label>
-        <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="512" />
+        <div class="password-field">
+          <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="512" />
+          <button id="togglePassword" class="password-toggle" type="button" aria-label="Mostrar senha" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+              <circle cx="12" cy="12" r="2.6" />
+              <path class="eye-slash" d="m4 4 16 16" />
+            </svg>
+          </button>
+        </div>
         <div id="loginError" class="login-error" role="alert" aria-live="polite"></div>
         <button id="loginButton" type="submit">Entrar</button>
       </form>

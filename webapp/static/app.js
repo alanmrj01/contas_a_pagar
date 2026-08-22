@@ -461,6 +461,18 @@
     }
   }
 
+  async function logout() {
+    if (state.busy) return;
+    setBusy(true);
+    try {
+      await api('/api/auth/logout', {method:'POST'});
+      window.location.replace('/');
+    } catch (error) {
+      setBusy(false);
+      showGuidedError(errorGuide(error));
+    }
+  }
+
   async function openBaseDialog() {
     if (state.busy) return;
     el('baseDialogInfo').textContent = 'Carregando BASE DADOS...';
@@ -628,6 +640,7 @@
   el('dialogValidate').addEventListener('click', () => { el('filesDialog').close(); validateFiles(); });
 
   el('baseBtn').addEventListener('click', openBaseDialog);
+  el('logoutBtn').addEventListener('click', logout);
   el('baseClose').addEventListener('click', () => el('baseDialog').close());
   el('editBaseBtn').addEventListener('click', () => { state.baseEditing = true; renderBaseTable(); });
   el('cancelBaseEditBtn').addEventListener('click', () => { state.baseEditing = false; renderBaseTable(); });
@@ -678,5 +691,6 @@
   el('cancelBaseConflictsBtn').addEventListener('click', cancelBaseConflicts);
 
   renderFiles();
+  window.addEventListener('pageshow', event => { if (event.persisted) window.location.reload(); });
   loadState();
 })();

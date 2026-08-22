@@ -4,7 +4,7 @@
 Adicionar defesa em profundidade à edição web sem alterar o motor determinístico financeiro, o fluxo funcional ou o relatório visual aprovado.
 
 ## 2. Modelo de acesso
-A URL pública mostra somente a tela de login. Usuário e senha são validados pelo Supabase Auth; a aplicação não armazena a senha nem o token de acesso retornado. Depois do login, o navegador recebe uma sessão temporária isolada, vinculada internamente ao identificador do usuário autenticado.
+A URL pública mostra somente a tela de login. E-mail completo e senha são validados pelo Supabase Auth; a aplicação não armazena a senha nem o token de acesso retornado. Depois do Auth, o backend consulta `public.usuarios_autorizados` exclusivamente com a chave secreta do servidor e só cria a sessão quando o registro existe, está ativo e possui perfil `administrador` ou `basico`. A sessão temporária fica vinculada internamente ao identificador, e-mail, nome e perfil retornados pelas fontes confiáveis do Supabase.
 
 ## 3. Sessão
 - Token aleatório: `secrets.token_urlsafe(32)`.

@@ -16,6 +16,7 @@ from .crypto_storage import seal_file
 
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{40,64}$")
 UPLOAD_ID_RE = re.compile(r"^[a-f0-9]{32}$")
+SESSION_PROFILES = frozenset({"administrador", "basico"})
 
 
 def _env_int(name: str, default: int, minimum: int, maximum: int) -> int:
@@ -82,7 +83,9 @@ class SessionState:
     last_pdf_url: str = ""
     last_source_names: list[str] = field(default_factory=list)
     authenticated_user_id: str = ""
-    authenticated_username: str = ""
+    authenticated_email: str = ""
+    authenticated_name: str = ""
+    authenticated_profile: str = ""
     custom_base_table: Any | None = None
     custom_base_revision: str = ""
     artifact_key: bytearray = field(default_factory=lambda: bytearray(os.urandom(32)))
@@ -98,7 +101,7 @@ class SessionState:
 
 
 class SessionStore:
-    """Sessões anônimas isoladas, efêmeras e não identificáveis por URL."""
+    """Sessões autenticadas isoladas, efêmeras e não identificáveis por URL."""
 
     def __init__(self, project_root: Path):
         self.project_root = project_root.resolve()
@@ -164,16 +167,43 @@ class SessionStore:
 
     def is_authenticated(self, key: str) -> bool:
         try:
-            return bool(self.state(key).authenticated_user_id)
+            state = self.state(key)
+            return bool(
+                state.authenticated_user_id
+                and state.authenticated_email
+                and state.authenticated_profile in SESSION_PROFILES
+            )
         except KeyError:
             return False
 
-    def authenticate(self, key: str, *, user_id: str, username: str) -> SessionState:
+    def authenticate(
+        self,
+        key: str,
+        *,
+        user_id: str,
+        email: str,
+        name: str,
+        profile: str,
+    ) -> SessionState:
+        normalized_profile = str(profile or "").strip().lower()
+        if normalized_profile not in SESSION_PROFILES:
+            raise ValueError("Perfil de sessão inválido.")
         state = self.state(key)
         state.authenticated_user_id = str(user_id)
-        state.authenticated_username = str(username)
+        state.authenticated_email = str(email).strip().lower()
+        state.authenticated_name = str(name).strip()
+        state.authenticated_profile = normalized_profile
         state.last_activity = time.time()
         return state
+
+    def clear_authentication(self, key: str) -> None:
+        state = self.state(key)
+        state.authenticated_user_id = ""
+        state.authenticated_email = ""
+        state.authenticated_name = ""
+        state.authenticated_profile = ""
+        state.custom_base_table = None
+        state.custom_base_revision = ""
 
     def touch(self, key: str) -> None:
         with self._guard:
@@ -379,7 +409,9 @@ class SessionStore:
             state.wipe_artifact_key()
             state.validated = None
             state.authenticated_user_id = ""
-            state.authenticated_username = ""
+            state.authenticated_email = ""
+            state.authenticated_name = ""
+            state.authenticated_profile = ""
             state.custom_base_table = None
             state.custom_base_revision = ""
             state.financial_upload_ids = []

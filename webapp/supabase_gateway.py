@@ -15,9 +15,10 @@ from typing import Any
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
-USERNAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 BASE_AAD_PREFIX = "cap-persistent-base-v1"
 BASE_TABLE = "contas_a_pagar_bases"
+AUTHORIZED_USERS_TABLE = "usuarios_autorizados"
+VALID_PROFILES = frozenset({"administrador", "basico"})
 
 
 class SupabaseUnavailable(RuntimeError):
@@ -28,11 +29,26 @@ class AuthenticationRejected(RuntimeError):
     pass
 
 
+class UserNotAuthorized(RuntimeError):
+    pass
+
+
+class UserAccessDisabled(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True)
 class AuthIdentity:
     user_id: str
-    username: str
     email: str
+
+
+@dataclass(frozen=True)
+class AuthorizedUser:
+    user_id: str
+    email: str
+    name: str
+    profile: str
 
 
 def _clean_url(value: str) -> str:
@@ -67,7 +83,6 @@ class SupabaseGateway:
         self.url = _clean_url(os.getenv("SUPABASE_URL", ""))
         self.publishable_key = os.getenv("SUPABASE_PUBLISHABLE_KEY", "").strip()
         self.secret_key = os.getenv("SUPABASE_SECRET_KEY", "").strip()
-        self.username_domain = os.getenv("SUPABASE_USERNAME_DOMAIN", "contasapagar.local").strip().lower()
         self._storage_key_value = os.getenv("PERSISTENT_BASE_KEY_B64", "").strip()
         self.timeout_seconds = 15
 
@@ -77,7 +92,6 @@ class SupabaseGateway:
             self.url
             and self.publishable_key
             and self.secret_key
-            and self.username_domain
             and self._storage_key_value
         )
 
@@ -134,31 +148,81 @@ class SupabaseGateway:
         except urllib.error.HTTPError as exc:
             safe_status = int(getattr(exc, "code", 0) or 0)
             if endpoint.startswith("/auth/v1/") and safe_status in {400, 401, 403, 422}:
-                raise AuthenticationRejected("Usuário ou senha inválidos.") from exc
+                raise AuthenticationRejected("E-mail ou senha inválidos.") from exc
             raise SupabaseUnavailable("O serviço externo recusou a operação segura solicitada.") from exc
         except AuthenticationRejected:
             raise
         except Exception as exc:
             raise SupabaseUnavailable("Não foi possível acessar o serviço seguro de autenticação e dados.") from exc
 
-    def sign_in(self, username: str, password: str) -> AuthIdentity:
+    @staticmethod
+    def normalize_email(value: str) -> str:
+        email = str(value or "").strip().lower()
+        local, separator, domain = email.partition("@")
+        valid = (
+            separator == "@"
+            and local
+            and domain
+            and "@" not in domain
+            and not any(character.isspace() for character in email)
+            and len(local) <= 64
+            and len(email) <= 320
+        )
+        if not valid:
+            raise AuthenticationRejected("E-mail ou senha inválidos.")
+        return email
+
+    def sign_in(self, email: str, password: str) -> AuthIdentity:
         self._require_configuration()
-        normalized = str(username or "").strip().lower()
-        if not USERNAME_RE.fullmatch(normalized) or not password:
-            raise AuthenticationRejected("Usuário ou senha inválidos.")
-        email = f"{normalized}@{self.username_domain}"
+        normalized_email = self.normalize_email(email)
+        if not password:
+            raise AuthenticationRejected("E-mail ou senha inválidos.")
         payload = self._request_json(
             "POST",
             "/auth/v1/token?grant_type=password",
             api_key=self.publishable_key,
-            payload={"email": email, "password": password},
+            payload={"email": normalized_email, "password": password},
         )
         user = payload.get("user") if isinstance(payload, dict) else None
         user_id = str((user or {}).get("id") or "").strip()
         returned_email = str((user or {}).get("email") or "").strip().lower()
-        if not user_id or returned_email != email:
-            raise AuthenticationRejected("Usuário ou senha inválidos.")
-        return AuthIdentity(user_id=user_id, username=normalized, email=returned_email)
+        if not user_id or returned_email != normalized_email:
+            raise AuthenticationRejected("E-mail ou senha inválidos.")
+        return AuthIdentity(user_id=user_id, email=returned_email)
+
+    def authorize_user(self, identity: AuthIdentity) -> AuthorizedUser:
+        """Valida a autorização no servidor depois do sucesso no Supabase Auth."""
+
+        self._require_configuration()
+        query = urllib.parse.urlencode({
+            "select": "user_id,email,nome,perfil,ativo",
+            "user_id": f"eq.{identity.user_id}",
+            "limit": "2",
+        })
+        rows = self._request_json(
+            "GET",
+            f"/rest/v1/{AUTHORIZED_USERS_TABLE}?{query}",
+            api_key=self.secret_key,
+        )
+        if not isinstance(rows, list) or len(rows) != 1:
+            raise UserNotAuthorized("Usuário autenticado sem autorização ativa.")
+
+        record = rows[0] if isinstance(rows[0], dict) else {}
+        if str(record.get("user_id") or "").strip() != identity.user_id:
+            raise UserNotAuthorized("Usuário autenticado sem autorização ativa.")
+        if record.get("ativo") is not True:
+            raise UserAccessDisabled("O acesso deste usuário está desativado.")
+
+        profile = str(record.get("perfil") or "").strip().lower()
+        if profile not in VALID_PROFILES:
+            raise UserNotAuthorized("Perfil de acesso não reconhecido.")
+        name = str(record.get("nome") or "").strip()
+        return AuthorizedUser(
+            user_id=identity.user_id,
+            email=identity.email,
+            name=name,
+            profile=profile,
+        )
 
     def _base_key(self) -> bytes:
         self._require_configuration()

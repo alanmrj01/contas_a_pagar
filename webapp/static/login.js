@@ -3,7 +3,18 @@
   const form = document.getElementById('loginForm');
   const button = document.getElementById('loginButton');
   const errorBox = document.getElementById('loginError');
+  const emailInput = document.getElementById('email');
+  const passwordInput = document.getElementById('password');
+  const togglePassword = document.getElementById('togglePassword');
   let csrf = '';
+
+  togglePassword.addEventListener('click', () => {
+    const visible = passwordInput.type === 'text';
+    passwordInput.type = visible ? 'password' : 'text';
+    togglePassword.setAttribute('aria-pressed', String(!visible));
+    togglePassword.setAttribute('aria-label', visible ? 'Mostrar senha' : 'Ocultar senha');
+    passwordInput.focus({preventScroll:true});
+  });
 
   async function bootstrap() {
     const response = await fetch('/api/security/bootstrap', {credentials:'same-origin', cache:'no-store'});
@@ -26,12 +37,12 @@
         cache:'no-store',
         headers:{'Content-Type':'application/json', 'X-CSRF-Token':csrf},
         body:JSON.stringify({
-          username:document.getElementById('username').value.trim(),
-          password:document.getElementById('password').value,
+          email:emailInput.value.trim().toLowerCase(),
+          password:passwordInput.value,
         }),
       });
       const payload = await response.json().catch(() => ({}));
-      document.getElementById('password').value = '';
+      passwordInput.value = '';
       if (!response.ok) throw new Error(payload.detail || 'Não foi possível entrar.');
       window.location.replace('/');
     } catch (error) {
@@ -44,5 +55,6 @@
     }
   });
 
+  window.addEventListener('pageshow', event => { if (event.persisted) window.location.reload(); });
   bootstrap().catch(error => { errorBox.textContent = String(error && error.message || error); });
 })();

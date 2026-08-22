@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import os
 import re
 import secrets
@@ -21,7 +22,13 @@ from webapp.crypto_storage import decrypt_uploaded_chunks, iter_unseal_file, val
 from webapp.engine import WebEngine
 from webapp.security import RuntimeSecurity, SlidingWindowLimiter, request_origin_is_allowed
 from webapp.session_store import SessionStore
-from webapp.supabase_gateway import AuthenticationRejected, SupabaseGateway, SupabaseUnavailable
+from webapp.supabase_gateway import (
+    AuthenticationRejected,
+    SupabaseGateway,
+    SupabaseUnavailable,
+    UserAccessDisabled,
+    UserNotAuthorized,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 INDEX_HTML = PROJECT_ROOT / "webapp" / "templates" / "index.html"
@@ -31,6 +38,7 @@ RESOURCES_DIR = PROJECT_ROOT / "resources"
 COOKIE_NAME = "cap_session"
 SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9À-ÿ._()\- ]+")
 SESSION_CLEANUP_INTERVAL = 10 * 60
+LOGGER = logging.getLogger("contas_a_pagar.auth")
 
 store = SessionStore(PROJECT_ROOT)
 supabase = SupabaseGateway()
@@ -186,6 +194,11 @@ async def session_security_middleware(request: Request, call_next):
     finally:
         store.end_request(sid)
 
+    if getattr(request.state, "session_destroyed", False):
+        token, sid, _ = store.create_session()
+        request.state.session_token = token
+        request.state.session_key = sid
+
     forwarded = (request.headers.get("x-forwarded-proto") or request.url.scheme).split(",")[0].strip().lower()
     response.set_cookie(
         COOKIE_NAME,
@@ -216,7 +229,7 @@ class UploadIdRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    username: str = Field(min_length=1, max_length=64)
+    email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=1, max_length=512)
 
 
@@ -301,25 +314,58 @@ def security_bootstrap(request: Request):
 @app.post("/api/auth/login")
 async def api_login(request: Request, payload: LoginRequest):
     sid = _sid(request)
+    if store.is_authenticated(sid):
+        raise HTTPException(status_code=409, detail="Encerre a sessão atual antes de entrar com outro usuário.")
     peer = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "unknown")).split(",")[0].strip()
-    login_key = f"login:{peer}:{payload.username.strip().casefold()}"
+    login_key = f"login:{peer}:{payload.email.strip().casefold()}"
     if not limiter.allow(login_key, limit=12, window_seconds=10 * 60):
         raise HTTPException(status_code=429, detail="Muitas tentativas de login. Aguarde alguns minutos e tente novamente.")
     try:
-        identity = await asyncio.to_thread(supabase.sign_in, payload.username, payload.password)
+        identity = await asyncio.to_thread(supabase.sign_in, payload.email, payload.password)
+        authorized = await asyncio.to_thread(supabase.authorize_user, identity)
         with store.lock(sid):
-            store.authenticate(sid, user_id=identity.user_id, username=identity.username)
+            store.authenticate(
+                sid,
+                user_id=authorized.user_id,
+                email=authorized.email,
+                name=authorized.name,
+                profile=authorized.profile,
+            )
             base = await asyncio.to_thread(engine.load_persistent_base, sid)
-        return {"ok": True, "username": identity.username, "base": base}
+        return {
+            "ok": True,
+            "email": authorized.email,
+            "name": authorized.name,
+            "profile": authorized.profile,
+            "base": base,
+        }
     except AuthenticationRejected as exc:
-        raise HTTPException(status_code=401, detail="Usuário ou senha inválidos.") from exc
+        store.clear_authentication(sid)
+        raise HTTPException(status_code=401, detail="E-mail ou senha inválidos.") from exc
+    except UserAccessDisabled as exc:
+        store.clear_authentication(sid)
+        raise HTTPException(status_code=403, detail="Seu acesso está desativado. Entre em contato com o administrador.") from exc
+    except UserNotAuthorized as exc:
+        store.clear_authentication(sid)
+        raise HTTPException(status_code=403, detail="Seu usuário não possui autorização para acessar este sistema.") from exc
     except SupabaseUnavailable as exc:
-        state = store.state(sid)
-        state.authenticated_user_id = ""
-        state.authenticated_username = ""
-        raise HTTPException(status_code=503, detail=_safe_error(exc)) from exc
+        store.clear_authentication(sid)
+        LOGGER.error("Falha de integração externa durante o login: %s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Não foi possível realizar o login no momento. Tente novamente.") from exc
+    except Exception as exc:
+        store.clear_authentication(sid)
+        LOGGER.error("Falha inesperada durante o login: %s", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="Não foi possível realizar o login no momento. Tente novamente.") from exc
     finally:
         payload.password = ""
+
+
+@app.post("/api/auth/logout")
+def api_logout(request: Request):
+    sid = _sid(request)
+    store.destroy_session(sid)
+    request.state.session_destroyed = True
+    return {"ok": True}
 
 
 @app.get("/api/state")
@@ -333,7 +379,11 @@ def api_state(request: Request):
             "validated": state.validated is not None,
             "report_url": state.last_report_url,
             "pdf_url": state.last_pdf_url,
-            "username": state.authenticated_username,
+            "user": {
+                "email": state.authenticated_email,
+                "name": state.authenticated_name,
+                "profile": state.authenticated_profile,
+            },
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Não foi possível carregar o estado da sessão.") from exc

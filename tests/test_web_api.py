@@ -7,7 +7,14 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from tests.security_helpers import stage_file, wrap_key_from_jwk
-from webapp.supabase_gateway import AuthIdentity
+from webapp.supabase_gateway import (
+    AuthIdentity,
+    AuthenticationRejected,
+    AuthorizedUser,
+    SupabaseUnavailable,
+    UserAccessDisabled,
+    UserNotAuthorized,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -20,10 +27,19 @@ def load_main(tmp_path, monkeypatch):
     monkeypatch.setattr(
         module.supabase,
         "sign_in",
-        lambda username, password: AuthIdentity(
+        lambda email, password: AuthIdentity(
             user_id="00000000-0000-0000-0000-000000000001",
-            username=str(username).strip().lower(),
-            email=f"{str(username).strip().lower()}@contasapagar.local",
+            email=str(email).strip().lower(),
+        ),
+    )
+    monkeypatch.setattr(
+        module.supabase,
+        "authorize_user",
+        lambda identity: AuthorizedUser(
+            user_id=identity.user_id,
+            email=identity.email,
+            name="Alan",
+            profile="administrador",
         ),
     )
     monkeypatch.setattr(module.supabase, "load_base", lambda user_id: persisted.get(user_id))
@@ -48,9 +64,150 @@ def login(client):
     response = client.post(
         "/api/auth/login",
         headers={"X-CSRF-Token": csrf(client)},
-        json={"username": "alan", "password": "segredo-de-teste"},
+        json={"email": "alanmr565@gmail.com", "password": "segredo-de-teste"},
     )
     assert response.status_code == 200, response.text
+
+
+def test_login_authorizes_full_email_and_stores_trusted_identity_in_session(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/auth/login",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"email": " Usuario@Empresa.Com.Br ", "password": "segredo-de-teste"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["email"] == "usuario@empresa.com.br"
+    assert response.json()["profile"] == "administrador"
+    authenticated = [state for state in main.store._states.values() if state.authenticated_user_id]
+    assert len(authenticated) == 1
+    state = authenticated[0]
+    assert state.authenticated_user_id == "00000000-0000-0000-0000-000000000001"
+    assert state.authenticated_email == "usuario@empresa.com.br"
+    assert state.authenticated_name == "Alan"
+    assert state.authenticated_profile == "administrador"
+
+
+def test_invalid_credentials_return_safe_email_message(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        main.supabase,
+        "sign_in",
+        lambda email, password: (_ for _ in ()).throw(AuthenticationRejected("interno")),
+    )
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/auth/login",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"email": "usuario@example.com", "password": "incorreta"},
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "E-mail ou senha inválidos."
+
+
+def test_authenticated_but_not_authorized_user_is_denied(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        main.supabase,
+        "authorize_user",
+        lambda identity: (_ for _ in ()).throw(UserNotAuthorized("interno")),
+    )
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/auth/login",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"email": "usuario@example.com", "password": "correta"},
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Seu usuário não possui autorização para acessar este sistema."
+    assert client.get("/api/state").status_code == 401
+
+
+def test_inactive_authorized_user_is_denied_with_specific_message(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        main.supabase,
+        "authorize_user",
+        lambda identity: (_ for _ in ()).throw(UserAccessDisabled("interno")),
+    )
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/auth/login",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"email": "inativo@example.com", "password": "correta"},
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Seu acesso está desativado. Entre em contato com o administrador."
+
+
+def test_basic_profile_is_permitted_and_kept_in_session(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        main.supabase,
+        "authorize_user",
+        lambda identity: AuthorizedUser(identity.user_id, identity.email, "Pessoa Básica", "basico"),
+    )
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/auth/login",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"email": "basico@outlook.com", "password": "correta"},
+    )
+    assert response.status_code == 200
+    assert response.json()["profile"] == "basico"
+    state = next(state for state in main.store._states.values() if state.authenticated_user_id)
+    assert state.authenticated_profile == "basico"
+
+
+def test_login_service_failure_does_not_expose_internal_details(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        main.supabase,
+        "sign_in",
+        lambda email, password: (_ for _ in ()).throw(SupabaseUnavailable("segredo interno")),
+    )
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/auth/login",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"email": "usuario@example.com", "password": "correta"},
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Não foi possível realizar o login no momento. Tente novamente."
+    assert "segredo interno" not in response.text
+
+
+def test_logout_destroys_session_rotates_cookie_and_protects_history(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+    client = TestClient(main.app)
+    login(client)
+    authenticated_cookie = client.cookies.get("cap_session")
+    response = client.post("/api/auth/logout", headers={"X-CSRF-Token": csrf(client)})
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert client.cookies.get("cap_session") != authenticated_cookie
+    assert client.get("/api/state").status_code == 401
+    assert client.get("/report/current").status_code == 401
+    home = client.get("/")
+    assert "Acesso seguro" in home.text
+
+
+def test_authenticated_session_cannot_be_rebound_without_logout(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+    client = TestClient(main.app)
+    login(client)
+    current_cookie = client.cookies.get("cap_session")
+    response = client.post(
+        "/api/auth/login",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"email": "outra-pessoa@example.com", "password": "outra-senha"},
+    )
+    assert response.status_code == 409
+    assert client.cookies.get("cap_session") == current_cookie
+    state = client.get("/api/state")
+    assert state.status_code == 200
+    assert state.json()["user"]["email"] == "alanmr565@gmail.com"
 
 
 def test_http_flow_encrypted_upload_validate_generate_and_private_downloads(tmp_path, monkeypatch):

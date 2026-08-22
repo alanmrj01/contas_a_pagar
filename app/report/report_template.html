@@ -433,7 +433,7 @@ select,input{transition:border-color .2s ease,box-shadow .2s ease,background .2s
   .themeToggle{order:1}
   .filters{grid-template-columns:1fr!important}
 }
-@media print{.themeToggle,.topControls .themeBtn{display:none!important}}
+@media print{.themeToggle,.topControls .themeBtn,#reportBaseBtn,#reportLogoutBtn{display:none!important}}
 </style>
 
 
@@ -466,7 +466,7 @@ body[data-theme="light"] .categoryRowLabel,body:not([data-theme]) .categoryRowLa
 </head>
 <body>
 <div class="wrap">
-  <header class="top"><div><div class="eyebrow">CONTAS A PAGAR • CONTROLE FINANCEIRO</div><h1>Previsto x Realizado</h1></div><div class="topControls"><button type="button" class="download" id="reportBaseBtn">Base de Dados</button><div class="themeToggle" role="group" aria-label="Alternar tema do relatório"><button type="button" class="themeBtn isActive" id="themeLightBtn" data-theme-value="light" aria-label="Usar tema claro" title="Tema claro" aria-pressed="true">☀</button><button type="button" class="themeBtn" id="themeDarkBtn" data-theme-value="dark" aria-label="Usar tema escuro" title="Tema escuro" aria-pressed="false">☾</button></div><div class="period" id="period"></div></div></header>
+  <header class="top"><div><div class="eyebrow">CONTAS A PAGAR • CONTROLE FINANCEIRO</div><h1>Previsto x Realizado</h1></div><div class="topControls"><button type="button" class="download" id="reportBaseBtn">Base de Dados</button><button type="button" class="download" id="reportLogoutBtn">Sair</button><div class="themeToggle" role="group" aria-label="Alternar tema do relatório"><button type="button" class="themeBtn isActive" id="themeLightBtn" data-theme-value="light" aria-label="Usar tema claro" title="Tema claro" aria-pressed="true">☀</button><button type="button" class="themeBtn" id="themeDarkBtn" data-theme-value="dark" aria-label="Usar tema escuro" title="Tema escuro" aria-pressed="false">☾</button></div><div class="period" id="period"></div></div></header>
   <div id="printFilterSummary" class="printOnly filterPrintSummary"></div>
   <nav class="toolbar" id="downloads"></nav>
   <section class="filters" aria-label="Filtros do relatório">
@@ -627,6 +627,7 @@ async function startReportBaseImport(mode){let file=reportPendingBaseFile;report
 async function cancelReportConflicts(){let uploadId=reportPendingBaseUpload;reportPendingBaseUpload='';reportPendingConflicts=[];if(uploadId)await discardReportUploads([uploadId]);if(el('reportConflictEditor').open)el('reportConflictEditor').close()}
 document.querySelectorAll('[data-close-dialog]').forEach(button=>button.addEventListener('click',()=>el(button.dataset.closeDialog).close()));
 el('reportBaseBtn').addEventListener('click',()=>el('reportBaseChoice').showModal());
+el('reportLogoutBtn').addEventListener('click',async()=>{setReportBusy(true);try{await reportApi('/api/auth/logout',{method:'POST'});location.replace('/')}catch(error){setReportBusy(false);reportError(error)}});
 el('addComplementaryBtn').addEventListener('click',()=>el('complementaryFileInput').click());
 el('complementaryFileInput').addEventListener('change',event=>{let files=[...(event.target.files||[])];event.target.value='';el('reportBaseChoice').close();if(files.length)addComplementaryFiles(files)});
 el('editReportBaseBtn').addEventListener('click',async()=>{el('reportBaseChoice').close();el('reportBaseEditor').showModal();try{await loadReportBase()}catch(error){reportError(error)}});
@@ -642,6 +643,7 @@ el('reportValidateConflicts').addEventListener('click',async()=>{setReportBusy(t
 el('reportConflictClose').addEventListener('click',cancelReportConflicts);el('reportCancelConflicts').addEventListener('click',cancelReportConflicts);
 
 const infoTip=el('globalInfoTip');let activeInfo=null;function showInfoTip(target){let text=target.getAttribute('data-tip');if(!text)return;activeInfo=target;infoTip.textContent=text;infoTip.style.display='block';infoTip.style.left='12px';infoTip.style.top='12px';requestAnimationFrame(()=>{if(activeInfo!==target)return;let r=target.getBoundingClientRect(),tw=infoTip.offsetWidth,th=infoTip.offsetHeight,left=r.right+10,top=r.top-5;if(left+tw>innerWidth-12)left=Math.max(12,r.left-tw-10);if(top+th>innerHeight-12)top=Math.max(12,innerHeight-th-12);infoTip.style.left=left+'px';infoTip.style.top=top+'px'})}function hideInfoTip(){activeInfo=null;infoTip.style.display='none'}
+window.addEventListener('pageshow',event=>{if(event.persisted)location.reload()});
 document.addEventListener('pointerover',e=>{let t=e.target.closest&&e.target.closest('.info[data-tip]');if(t)showInfoTip(t)});document.addEventListener('pointerout',e=>{let t=e.target.closest&&e.target.closest('.info[data-tip]');if(t&&!t.contains(e.relatedTarget))hideInfoTip()});document.addEventListener('focusin',e=>{let t=e.target.closest&&e.target.closest('.info[data-tip]');if(t)showInfoTip(t)});document.addEventListener('focusout',e=>{if(e.target.closest&&e.target.closest('.info[data-tip]'))hideInfoTip()});window.addEventListener('scroll',hideInfoTip,true);window.addEventListener('resize',()=>{hideInfoTip();fitReportValues();fitMonthlyViewport()});
 const baseRender=render;render=function(){baseRender();requestAnimationFrame(()=>{fitReportValues();fitMonthlyViewport();updatePrintFilterSummary()})};loadClassificationOptions();render();
 </script>

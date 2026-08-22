@@ -26,7 +26,5 @@ services:
         sync: false
       - key: SUPABASE_SECRET_KEY
         sync: false
-      - key: SUPABASE_USERNAME_DOMAIN
-        value: "contasapagar.local"
       - key: PERSISTENT_BASE_KEY_B64
         sync: false

@@ -12,7 +12,8 @@ A BASE DADOS continua separada e pode ser consultada, editada, exportada, substi
 ## Segurança da edição web
 
 ### Sessão autenticada e temporária
-- A tela inicial exige usuário e senha validados pelo Supabase Auth; a senha não é armazenada pela aplicação.
+- A tela inicial exige e-mail completo e senha validados pelo Supabase Auth; a senha não é armazenada pela aplicação.
+- Depois do Auth, o servidor consulta `public.usuarios_autorizados` pela chave `user_id` e só libera usuários ativos com perfil `administrador` ou `basico`.
 - Cada navegador recebe um token de sessão criptograficamente aleatório em cookie `HttpOnly`, `Secure` em HTTPS e `SameSite=Strict`.
 - O token bruto não é usado como nome de pasta; o servidor usa seu SHA-256 como identificador interno.
 - O ID da sessão não aparece na URL.

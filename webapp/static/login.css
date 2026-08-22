@@ -11,6 +11,7 @@ form{display:grid;gap:9px}
 label{font-weight:750;color:#dceaf4;margin-top:6px}
 input{width:100%;border:1px solid #4d7896;border-radius:11px;background:#09243a;color:#fff;padding:13px 14px;font:inherit;outline:none}
 input:focus{border-color:#8bc8e6;box-shadow:0 0 0 3px rgba(139,200,230,.18)}
+.password-field{position:relative}.password-field input{padding-right:50px}.password-toggle{position:absolute;right:5px;top:50%;transform:translateY(-50%);width:40px;height:38px;margin:0;padding:8px;border:0;border-radius:8px;background:transparent;color:#b9d5e5;display:grid;place-items:center;cursor:pointer}.password-toggle:hover{background:#ffffff0c;color:#fff}.password-toggle:focus-visible{outline:2px solid #8bc8e6;outline-offset:1px}.password-toggle svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.password-toggle .eye-slash{display:none}.password-toggle[aria-pressed="true"] .eye-slash{display:block}
 button{margin-top:12px;border:1px solid #9ad1eb;border-radius:11px;padding:13px 16px;background:#176f9d;color:#fff;font:inherit;font-weight:800;cursor:pointer}
 button:hover{background:#1b7dac}
 button:disabled{opacity:.65;cursor:wait}

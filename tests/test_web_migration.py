@@ -93,7 +93,8 @@ def test_unreadable_file_fallback_clears_browser_selection_without_reload():
     assert "state.files = []" in JS
     assert "input.value = ''" in JS
     assert "Faça uma cópia do arquivo" in JS
-    assert "window.location.reload" not in JS
+    fallback = JS.split("function clearFilesAfterReadFailure", 1)[1].split("function ", 1)[0]
+    assert "window.location.reload" not in fallback
 
 
 def test_error_dialog_is_guided_in_three_steps_and_keeps_technical_details_collapsed():
@@ -105,8 +106,14 @@ def test_error_dialog_is_guided_in_three_steps_and_keeps_technical_details_colla
 
 def test_login_precedes_the_application_and_credentials_are_not_hardcoded():
     assert "Acesso seguro" in LOGIN_HTML
-    assert 'autocomplete="username"' in LOGIN_HTML
+    assert '<label for="email">E-mail</label>' in LOGIN_HTML
+    assert 'id="email" name="email" type="email"' in LOGIN_HTML
+    assert 'autocomplete="email"' in LOGIN_HTML
     assert 'autocomplete="current-password"' in LOGIN_HTML
+    assert 'id="togglePassword"' in LOGIN_HTML
+    assert 'type="button" aria-label="Mostrar senha"' in LOGIN_HTML
+    assert "passwordInput.type = visible ? 'password' : 'text'" in LOGIN_JS
+    assert "'Ocultar senha'" in LOGIN_JS
     assert "/api/auth/login" in LOGIN_JS
     project_text = "\n".join([
         (ROOT / "main.py").read_text(encoding="utf-8"),
@@ -114,6 +121,38 @@ def test_login_precedes_the_application_and_credentials_are_not_hardcoded():
         LOGIN_JS,
     ])
     assert "positivo123" not in project_text
+
+
+def test_fixed_username_domain_is_absent_and_secret_key_stays_server_side():
+    runtime_files = [
+        ROOT / "main.py",
+        ROOT / "webapp" / "supabase_gateway.py",
+        ROOT / "webapp" / "static" / "login.js",
+        ROOT / "webapp" / "templates" / "login.html",
+        ROOT / ".env.example",
+        ROOT / "render.yaml",
+    ]
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in runtime_files)
+    removed_setting = "SUPABASE_USERNAME" + "_DOMAIN"
+    assert removed_setting not in combined
+    assert "@contasapagar.local" not in combined
+    assert "body:JSON.stringify({" in LOGIN_JS
+    assert "email:emailInput.value.trim().toLowerCase()" in LOGIN_JS
+    frontend = "\n".join([LOGIN_HTML, LOGIN_JS, JS])
+    assert "SUPABASE_SECRET_KEY" not in frontend
+    assert "secret_key" not in frontend
+
+
+def test_logout_exists_on_application_and_report_and_rotates_server_session():
+    main = (ROOT / "main.py").read_text(encoding="utf-8")
+    report = (ROOT / "app" / "report" / "report_template.html").read_text(encoding="utf-8")
+    assert 'id="logoutBtn"' in HTML
+    assert "'/api/auth/logout'" in JS
+    assert '@app.post("/api/auth/logout")' in main
+    assert "store.destroy_session(sid)" in main
+    assert "request.state.session_destroyed = True" in main
+    assert 'id="reportLogoutBtn"' in report
+    assert "'/api/auth/logout'" in report
 
 
 def test_expired_csrf_is_renewed_once_without_mislabeling_it_as_file_origin_failure():
