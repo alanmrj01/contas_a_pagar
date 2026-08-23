@@ -28,8 +28,8 @@
     },
     "app/report/report_template.html": {
       "desktop_2_0_2_sha256": "EE17F692ED1B48D4BE03F2A5B20B22940674844F4805C2B84990552A40FD720B",
-      "current_sha256": "52EE1D49EAC41B134A31F9272631DC0D43F8B84F7E603A3B2F5EDB0CEE8CA094",
-      "reason": "Alterações cirúrgicas aprovadas no relatório: gráfico por categoria horizontal com filtro Previsto/Realizado, rótulos de desvio refinados, indicação dos meses, edição/classificação da Base de Dados, planilhas complementares, atualização integral após cada operação e saída segura da sessão. O motor financeiro permanece inalterado."
+      "current_sha256": "89A16A8ADD8ADC5CCA5A411F7354A8641BF7BE71616F4E697041295730866BEC",
+      "reason": "Alterações cirúrgicas aprovadas no relatório: gráfico por categoria horizontal com filtro Previsto/Realizado, rótulos de desvio refinados, indicação dos meses, cor preta nos identificadores laterais de mês/tipo desse gráfico, edição/classificação da Base de Dados, planilhas complementares, atualização integral após cada operação e saída segura da sessão. O motor financeiro permanece inalterado."
     },
     "app/services/excel_export.py": {
       "desktop_2_0_2_sha256": "96104948972EA7CF7E8D3E8A68EC59506DBC1A57D3944C66C7FA482F7CA98904",
