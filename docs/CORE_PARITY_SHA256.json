@@ -18,8 +18,13 @@
   "approved_web_overrides": {
     "app/services/sheet_detector.py": {
       "desktop_2_0_2_sha256": "399CBD8CCF98AAB54915EA436BB06A2190986FBC4775FC41D0F9B94EF699EBF0",
-      "current_sha256": "FB920893E742F7B068CFCBDF9721474021C03E532593D4CA9350A59C9D01FF25",
-      "reason": "Alteração cirúrgica aprovada: suporte determinístico ao consolidado Valor/Valor2, mantendo Situação FC como única chave de separação PREVISTO/REALIZADO."
+      "current_sha256": "A1D7E984BEC7F3776169DD422A8AAAA6CFFA563ECF92A32DD631E83227784B8E",
+      "reason": "Alterações cirúrgicas aprovadas: suporte determinístico ao consolidado Valor/Valor2, mantendo Situação FC como única chave de separação PREVISTO/REALIZADO, e preservação de Fluxo JMM/Categoria para a precedência auditável do reconciliador."
+    },
+    "app/services/reconciler.py": {
+      "desktop_2_0_2_sha256": "43A4D065F0EACD6B6EC434138577BB7AE959F30441667F6987A1C598D611D255",
+      "current_sha256": "1FF726CA662D99EFA021951BBB020CB4089644CF98EC2283DC10B232C600F611",
+      "reason": "Alteração cirúrgica aprovada: precedência determinística por código da base, nome exato inequívoco, classificação direta da planilha e histórico inequívoco do mesmo código, sem similaridade."
     },
     "app/report/report_template.html": {
       "desktop_2_0_2_sha256": "EE17F692ED1B48D4BE03F2A5B20B22940674844F4805C2B84990552A40FD720B",

@@ -29,6 +29,10 @@ class AuthenticationRejected(RuntimeError):
     pass
 
 
+class RecoveryCodeRejected(RuntimeError):
+    pass
+
+
 class UserNotAuthorized(RuntimeError):
     pass
 
@@ -41,6 +45,12 @@ class UserAccessDisabled(RuntimeError):
 class AuthIdentity:
     user_id: str
     email: str
+
+
+@dataclass(frozen=True)
+class RecoverySession:
+    email: str
+    access_token: str
 
 
 @dataclass(frozen=True)
@@ -189,6 +199,80 @@ class SupabaseGateway:
         if not user_id or returned_email != normalized_email:
             raise AuthenticationRejected("E-mail ou senha inválidos.")
         return AuthIdentity(user_id=user_id, email=returned_email)
+
+    def request_password_recovery(self, email: str) -> None:
+        """Solicita ao Supabase o e-mail oficial de recuperação, sem enumerar usuários."""
+
+        self._require_configuration()
+        normalized_email = self.normalize_email(email)
+        self._request_json(
+            "POST",
+            "/auth/v1/recover",
+            api_key=self.publishable_key,
+            payload={"email": normalized_email},
+        )
+
+    def verify_recovery_otp(self, email: str, token: str) -> RecoverySession:
+        """Troca o OTP de recovery por uma sessão temporária mantida somente no servidor."""
+
+        self._require_configuration()
+        normalized_email = self.normalize_email(email)
+        normalized_token = str(token or "").strip()
+        if not re.fullmatch(r"[0-9]{6}", normalized_token):
+            raise RecoveryCodeRejected("Código de recuperação inválido ou expirado.")
+        try:
+            payload = self._request_json(
+                "POST",
+                "/auth/v1/verify",
+                api_key=self.publishable_key,
+                payload={"email": normalized_email, "token": normalized_token, "type": "recovery"},
+            )
+        except AuthenticationRejected as exc:
+            raise RecoveryCodeRejected("Código de recuperação inválido ou expirado.") from exc
+        user = payload.get("user") if isinstance(payload, dict) else None
+        returned_email = str((user or {}).get("email") or "").strip().lower()
+        access_token = str((payload or {}).get("access_token") or "").strip() if isinstance(payload, dict) else ""
+        if returned_email != normalized_email or not access_token or len(access_token) > 8192:
+            raise RecoveryCodeRejected("Código de recuperação inválido ou expirado.")
+        return RecoverySession(email=returned_email, access_token=access_token)
+
+    def update_recovery_password(self, access_token: str, password: str) -> None:
+        """Atualiza a senha com o JWT temporário emitido pelo verifyOtp de recovery."""
+
+        self._require_configuration()
+        token = str(access_token or "").strip()
+        if not token or len(token) > 8192:
+            raise RecoveryCodeRejected("A confirmação de recuperação expirou.")
+        try:
+            result = self._request_json(
+                "PUT",
+                "/auth/v1/user",
+                api_key=self.publishable_key,
+                payload={"password": password},
+                extra_headers={"Authorization": f"Bearer {token}"},
+            )
+        except AuthenticationRejected as exc:
+            raise RecoveryCodeRejected("A confirmação de recuperação expirou.") from exc
+        if not isinstance(result, dict) or not str(result.get("id") or "").strip():
+            raise SupabaseUnavailable("O serviço de autenticação não confirmou a atualização da senha.")
+
+    def end_recovery_session(self, access_token: str) -> None:
+        """Revoga a sessão Supabase criada exclusivamente para a recuperação."""
+
+        self._require_configuration()
+        token = str(access_token or "").strip()
+        if not token:
+            return
+        try:
+            self._request_json(
+                "POST",
+                "/auth/v1/logout?scope=local",
+                api_key=self.publishable_key,
+                extra_headers={"Authorization": f"Bearer {token}"},
+            )
+        except AuthenticationRejected:
+            # Sessão já expirada/revogada equivale ao resultado pretendido.
+            return
 
     def authorize_user(self, identity: AuthIdentity) -> AuthorizedUser:
         """Valida a autorização no servidor depois do sucesso no Supabase Auth."""

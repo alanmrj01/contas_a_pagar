@@ -1,11 +1,13 @@
 :root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:#e9f3fb;background:#071a2a;color-scheme:dark}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% 0,#12486a 0,transparent 42%),linear-gradient(145deg,#061522,#0b2940);display:grid;place-items:center;padding:24px}
 .login-shell{width:min(100%,440px)}
 .login-card{border:1px solid #37698b;border-radius:22px;background:rgba(12,40,61,.96);box-shadow:0 22px 60px rgba(0,0,0,.4);padding:34px}
 .login-logo{display:block;width:78px;height:78px;object-fit:contain;margin:0 auto 18px}
 .eyebrow{text-align:center;color:#98c9e5;font-size:.75rem;font-weight:800;letter-spacing:.18em}
 h1{text-align:center;margin:8px 0 8px;font-size:1.9rem}
+h2{text-align:center;margin:0 0 8px;font-size:1.35rem}
 p{text-align:center;color:#c1d5e3;line-height:1.5;margin:0 0 24px}
 form{display:grid;gap:9px}
 label{font-weight:750;color:#dceaf4;margin-top:6px}
@@ -16,5 +18,10 @@ button{margin-top:12px;border:1px solid #9ad1eb;border-radius:11px;padding:13px 
 button:hover{background:#1b7dac}
 button:disabled{opacity:.65;cursor:wait}
 .login-error{min-height:22px;color:#ffd6d6;font-weight:700;font-size:.9rem}
+.login-error.is-success{color:#bcebd2}
+.login-message{min-height:22px;color:#c7e2f1;font-weight:650;font-size:.86rem;line-height:1.45;margin-top:10px}
+.text-button{margin-top:2px;padding:8px;border:0;background:transparent;color:#b9d9ea;font-size:.9rem;font-weight:750;text-decoration:underline;text-underline-offset:3px}.text-button:hover{background:transparent;color:#fff}.text-button:disabled{background:transparent;color:#7897aa;cursor:not-allowed}
+.secondary-button{margin-top:4px;background:#0c3049;border-color:#547c96}.secondary-button:hover{background:#123d59}
+.recovery-panel{display:grid;gap:9px}.recovery-panel>p{margin:0 0 8px}.recovery-panel form{margin-top:2px}.password-help{text-align:left;margin:2px 0 0;font-size:.78rem;color:#a9c5d6}
 .security-note{margin:24px 0 0;border-top:1px solid #315b78;padding-top:18px;font-size:.78rem;color:#99b6c9}
 @media(max-width:480px){.login-card{padding:26px 20px}}

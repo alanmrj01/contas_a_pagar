@@ -120,6 +120,8 @@ def _canonicalize(table: TableData, role: str) -> TableData:
             "Data prevista": ("Data prevista",),
             "Valor previsto": ("Valor previsto",),
             "Mês": ("Mês", "Mes"),
+            "Fluxo JMM": ("Fluxo JMM", "Fluxo"),
+            "Categoria": ("Categoria",),
         },
         "realizado": {
             "Título": ("Título", "Titulo"),
@@ -135,6 +137,8 @@ def _canonicalize(table: TableData, role: str) -> TableData:
             "Desc. Conta Contábil": ("Desc. Conta Contábil", "Desc Conta Contábil"),
             "Desc. Conta Financeira": ("Desc. Conta Financeira", "Desc Conta Financeira"),
             "Desc. Centro de Custo": ("Desc. Centro de Custo", "Desc Centro de Custo"),
+            "Fluxo JMM": ("Fluxo JMM", "Fluxo"),
+            "Categoria": ("Categoria",),
         },
     }[role]
     mapping = {canonical: find_column(table, *alts) for canonical, alts in aliases.items()}
@@ -160,8 +164,8 @@ def _split_consolidated_fc(table: TableData) -> tuple[TableData, TableData, list
     - PREVISTO usa somente a coluna Previsto.
     - REALIZADO usa o valor absoluto da coluna Realizado, pois o layout do cliente
       representa saídas realizadas com sinal negativo.
-    - Fluxo JMM/Categoria existentes no arquivo NÃO são usados para classificação;
-      a classificação permanece vinda exclusivamente da BASE DADOS fixa.
+    - Fluxo JMM/Categoria são preservados para o reconciliador aplicar a
+      precedência determinística; a BASE DADOS continua tendo prioridade.
     - O layout não possui Vencimento. A Data é tratada como data do realizado e a
       pontualidade permanece indisponível, evitando inferência incorreta.
     """
@@ -172,6 +176,8 @@ def _split_consolidated_fc(table: TableData) -> tuple[TableData, TableData, list
     value_columns = _consolidated_value_columns(table)
     c_status = find_column(table, "Situação FC", "Situacao FC", "Situação", "Situacao")
     c_month = find_column(table, "Mês", "Mes")
+    c_flow = find_column(table, "Fluxo JMM", "Fluxo")
+    c_category = find_column(table, "Categoria")
 
     assert value_columns is not None
     value_layout, c_prev, c_real = value_columns
@@ -192,6 +198,10 @@ def _split_consolidated_fc(table: TableData) -> tuple[TableData, TableData, list
             row["Valor previsto"] = original.get(c_prev)
             if c_month:
                 row["Mês"] = original.get(c_month)
+            if c_flow:
+                row["Fluxo JMM"] = original.get(c_flow)
+            if c_category:
+                row["Categoria"] = original.get(c_category)
             p_rows.append(row)
         elif status == "REALIZADO":
             row = dict(original)
@@ -213,6 +223,10 @@ def _split_consolidated_fc(table: TableData) -> tuple[TableData, TableData, list
             row["Emissão"] = original.get(c_date)
             row["Ult. Pgto."] = original.get(c_date)
             row["Vencimento"] = None
+            if c_flow:
+                row["Fluxo JMM"] = original.get(c_flow)
+            if c_category:
+                row["Categoria"] = original.get(c_category)
             r_rows.append(row)
         elif status:
             unknown_status += 1
@@ -220,14 +234,14 @@ def _split_consolidated_fc(table: TableData) -> tuple[TableData, TableData, list
     source = table.source_path
     p = TableData(
         sheet_name=f"{table.sheet_name} • PREVISTO",
-        headers=["Título Previsto", "Cód Fornecedor", "Fornecedor", "Data prevista", "Valor previsto", "Mês"],
+        headers=["Título Previsto", "Cód Fornecedor", "Fornecedor", "Data prevista", "Valor previsto", "Mês", "Fluxo JMM", "Categoria"],
         rows=p_rows,
         source_path=source,
         header_row=table.header_row,
     )
     r = TableData(
         sheet_name=f"{table.sheet_name} • REALIZADO",
-        headers=["Título", "Fornecedor", "Nome Fornecedor", "Vlr.Original", "Emissão", "Ult. Pgto.", "Vencimento"],
+        headers=["Título", "Fornecedor", "Nome Fornecedor", "Vlr.Original", "Emissão", "Ult. Pgto.", "Vencimento", "Fluxo JMM", "Categoria"],
         rows=r_rows,
         source_path=source,
         header_row=table.header_row,
@@ -236,7 +250,7 @@ def _split_consolidated_fc(table: TableData) -> tuple[TableData, TableData, list
     notes = [
         f"Layout consolidado identificado em '{table.sheet_name}': {len(p_rows)} linha(s) PREVISTO e {len(r_rows)} linha(s) REALIZADO foram separadas automaticamente pela coluna Situação FC.",
         "Neste layout, a coluna Data do REALIZADO é usada como data de realização. Como não existe Vencimento, a pontualidade não é inferida e aparecerá como indisponível.",
-        "Fluxo JMM e Categoria eventualmente presentes no arquivo importado são ignorados na classificação; a automação continua usando somente a BASE DADOS fixa para evitar inconsistências.",
+        "Fluxo JMM e Categoria presentes no arquivo são preservados como fallback determinístico; a BASE DADOS fixa continua prevalecendo por código e por nome exato inequívoco.",
     ]
     if value_layout == "valor_valor2":
         notes.insert(

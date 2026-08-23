@@ -31,7 +31,7 @@ def test_ambiguous_similar_name_is_not_auto_classified():
     result = reconcile(previsto, realizado, base)
     assert result.previsto[0]["category"] == "IMPOSTOS IR E INSS"
     assert result.realizado[0]["category"] == "Não classificado"
-    assert result.realizado[0]["match"] == "nao_classificado"
+    assert result.realizado[0]["match"] == "nao_resolvida"
     assert result.realizado[0]["punctuality"] == "Dentro do Prazo"
     assert result.warnings and result.warnings[0]["details"][0]["source_row"] == 2
 
@@ -48,7 +48,7 @@ def test_exact_unique_name_can_classify_when_code_missing():
     ])
     result = reconcile(previsto, realizado, base)
     assert result.realizado[0]["category"] == "RECORRENTE"
-    assert result.realizado[0]["match"] == "nome_exato"
+    assert result.realizado[0]["match"] == "base_nome"
 
 
 def test_realizado_emissao_is_preserved_as_iso_date_for_report_filter():

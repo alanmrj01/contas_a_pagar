@@ -11,6 +11,8 @@ from webapp.supabase_gateway import (
     AuthIdentity,
     AuthenticationRejected,
     AuthorizedUser,
+    RecoveryCodeRejected,
+    RecoverySession,
     SupabaseUnavailable,
     UserAccessDisabled,
     UserNotAuthorized,
@@ -176,6 +178,135 @@ def test_login_service_failure_does_not_expose_internal_details(tmp_path, monkey
     assert response.status_code == 503
     assert response.json()["detail"] == "Não foi possível realizar o login no momento. Tente novamente."
     assert "segredo interno" not in response.text
+
+
+def test_password_recovery_request_is_generic_even_when_supabase_rejects_email(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        main.supabase,
+        "request_password_recovery",
+        lambda email: (_ for _ in ()).throw(AuthenticationRejected("usuário ausente")),
+    )
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/auth/recovery/request",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"email": "nao-existe@example.com"},
+    )
+    assert response.status_code == 200
+    assert response.json()["message"].startswith("Se o e-mail estiver cadastrado")
+    assert "usuário ausente" not in response.text
+    assert response.json()["cooldown_seconds"] == 60
+
+
+def test_password_recovery_request_does_not_expose_external_service_failure(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        main.supabase,
+        "request_password_recovery",
+        lambda email: (_ for _ in ()).throw(SupabaseUnavailable("smtp interno")),
+    )
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/auth/recovery/request",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"email": "usuario@example.com"},
+    )
+    assert response.status_code == 200
+    assert response.json()["message"].startswith("Se o e-mail estiver cadastrado")
+    assert "smtp interno" not in response.text
+
+
+def test_password_recovery_rejects_incorrect_and_expired_otp_with_safe_message(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        main.supabase,
+        "verify_recovery_otp",
+        lambda email, code: (_ for _ in ()).throw(RecoveryCodeRejected("otp_expired interno")),
+    )
+    client = TestClient(main.app)
+    for code in ("111111", "222222"):
+        response = client.post(
+            "/api/auth/recovery/verify",
+            headers={"X-CSRF-Token": csrf(client)},
+            json={"email": "usuario@example.com", "code": code},
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Código inválido ou expirado. Solicite um novo código e tente novamente."
+        assert "interno" not in response.text
+
+
+def test_password_recovery_rejects_different_passwords_before_supabase_update(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        main.supabase,
+        "verify_recovery_otp",
+        lambda email, code: RecoverySession(email, "temporary-recovery-jwt"),
+    )
+    called = []
+    monkeypatch.setattr(main.supabase, "update_recovery_password", lambda *args: called.append(args))
+    client = TestClient(main.app)
+    verified = client.post(
+        "/api/auth/recovery/verify",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"email": "usuario@example.com", "code": "123456"},
+    )
+    assert verified.status_code == 200
+    response = client.post(
+        "/api/auth/recovery/update",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"password": "NovaSenha123", "confirm_password": "OutraSenha123"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "As senhas informadas não coincidem."
+    assert called == []
+
+
+def test_successful_recovery_updates_password_ends_temporary_session_and_allows_new_login(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+    updated = []
+    ended = []
+    logins = []
+    monkeypatch.setattr(
+        main.supabase,
+        "verify_recovery_otp",
+        lambda email, code: RecoverySession(str(email).strip().lower(), "temporary-recovery-jwt"),
+    )
+    monkeypatch.setattr(main.supabase, "update_recovery_password", lambda token, password: updated.append((token, password)))
+    monkeypatch.setattr(main.supabase, "end_recovery_session", lambda token: ended.append(token))
+    client = TestClient(main.app)
+    verified = client.post(
+        "/api/auth/recovery/verify",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"email": "usuario@example.com", "code": "123456"},
+    )
+    assert verified.status_code == 200
+    assert "access_token" not in verified.text
+    response = client.post(
+        "/api/auth/recovery/update",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"password": "NovaSenha123", "confirm_password": "NovaSenha123"},
+    )
+    assert response.status_code == 200
+    assert updated == [("temporary-recovery-jwt", "NovaSenha123")]
+    assert ended == ["temporary-recovery-jwt"]
+    assert all(not state.recovery_access_token for state in main.store._states.values())
+
+    monkeypatch.setattr(
+        main.supabase,
+        "sign_in",
+        lambda email, password: (
+            logins.append((email, password))
+            or AuthIdentity("00000000-0000-0000-0000-000000000001", str(email).strip().lower())
+        ),
+    )
+    login_response = client.post(
+        "/api/auth/login",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"email": "usuario@example.com", "password": "NovaSenha123"},
+    )
+    assert login_response.status_code == 200
+    assert logins == [("usuario@example.com", "NovaSenha123")]
 
 
 def test_logout_destroys_session_rotates_cookie_and_protects_history(tmp_path, monkeypatch):

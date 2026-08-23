@@ -8,6 +8,8 @@ from webapp.supabase_gateway import (
     AuthIdentity,
     AuthenticationRejected,
     AuthorizedUser,
+    RecoveryCodeRejected,
+    RecoverySession,
     SupabaseGateway,
     SupabaseUnavailable,
     UserAccessDisabled,
@@ -53,6 +55,74 @@ def test_login_uses_complete_normalized_email_without_restricting_domain(monkeyp
     identity = gateway.sign_in(" Usuario@Empresa.Com.Br ", "senha-de-teste")
     assert identity == AuthIdentity("user-1", "usuario@empresa.com.br")
     assert captured == {"email": "usuario@empresa.com.br", "password": "senha-de-teste"}
+
+
+def test_recovery_request_uses_publishable_key_and_official_recover_endpoint(monkeypatch):
+    gateway = configured_gateway(monkeypatch)
+    captured = {}
+
+    def request(method, endpoint, *, api_key, payload=None, extra_headers=None):
+        captured.update(method=method, endpoint=endpoint, api_key=api_key, payload=payload)
+        return {}
+
+    monkeypatch.setattr(gateway, "_request_json", request)
+    gateway.request_password_recovery(" Usuario@Empresa.Com.Br ")
+    assert captured == {
+        "method": "POST",
+        "endpoint": "/auth/v1/recover",
+        "api_key": "sb_publishable_test",
+        "payload": {"email": "usuario@empresa.com.br"},
+    }
+
+
+def test_correct_recovery_otp_uses_recovery_type_and_returns_server_session(monkeypatch):
+    gateway = configured_gateway(monkeypatch)
+    captured = {}
+
+    def request(method, endpoint, *, api_key, payload=None, extra_headers=None):
+        captured.update(method=method, endpoint=endpoint, api_key=api_key, payload=payload)
+        return {"access_token": "temporary-recovery-jwt", "user": {"email": "usuario@example.com"}}
+
+    monkeypatch.setattr(gateway, "_request_json", request)
+    recovery = gateway.verify_recovery_otp("usuario@example.com", "123456")
+    assert recovery == RecoverySession("usuario@example.com", "temporary-recovery-jwt")
+    assert captured["endpoint"] == "/auth/v1/verify"
+    assert captured["payload"] == {"email": "usuario@example.com", "token": "123456", "type": "recovery"}
+    assert captured["api_key"] == "sb_publishable_test"
+
+
+@pytest.mark.parametrize("supabase_message", ["invalid token", "otp_expired"])
+def test_incorrect_or_expired_recovery_otp_is_rejected(monkeypatch, supabase_message):
+    gateway = configured_gateway(monkeypatch)
+    monkeypatch.setattr(
+        gateway,
+        "_request_json",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AuthenticationRejected(supabase_message)),
+    )
+    with pytest.raises(RecoveryCodeRejected, match="inválido ou expirado"):
+        gateway.verify_recovery_otp("usuario@example.com", "123456")
+
+
+def test_recovery_password_update_and_temporary_session_logout_use_only_publishable_key(monkeypatch):
+    gateway = configured_gateway(monkeypatch)
+    calls = []
+
+    def request(method, endpoint, *, api_key, payload=None, extra_headers=None):
+        calls.append((method, endpoint, api_key, payload, extra_headers))
+        return {"id": "user-1"} if endpoint == "/auth/v1/user" else None
+
+    monkeypatch.setattr(gateway, "_request_json", request)
+    gateway.update_recovery_password("temporary-recovery-jwt", "NovaSenha123")
+    gateway.end_recovery_session("temporary-recovery-jwt")
+    assert calls[0] == (
+        "PUT",
+        "/auth/v1/user",
+        "sb_publishable_test",
+        {"password": "NovaSenha123"},
+        {"Authorization": "Bearer temporary-recovery-jwt"},
+    )
+    assert calls[1][0:3] == ("POST", "/auth/v1/logout?scope=local", "sb_publishable_test")
+    assert all(call[2] != "sb_secret_test" for call in calls)
 
 
 def test_active_administrator_is_authorized_by_auth_user_id(monkeypatch):

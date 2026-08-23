@@ -86,6 +86,9 @@ class SessionState:
     authenticated_email: str = ""
     authenticated_name: str = ""
     authenticated_profile: str = ""
+    recovery_email: str = ""
+    recovery_access_token: bytearray = field(default_factory=bytearray)
+    recovery_verified_at: float = 0.0
     custom_base_table: Any | None = None
     custom_base_revision: str = ""
     artifact_key: bytearray = field(default_factory=lambda: bytearray(os.urandom(32)))
@@ -98,6 +101,13 @@ class SessionState:
     def wipe_artifact_key(self) -> None:
         for i in range(len(self.artifact_key)):
             self.artifact_key[i] = 0
+
+    def wipe_recovery(self) -> None:
+        for i in range(len(self.recovery_access_token)):
+            self.recovery_access_token[i] = 0
+        self.recovery_access_token = bytearray()
+        self.recovery_email = ""
+        self.recovery_verified_at = 0.0
 
 
 class SessionStore:
@@ -193,6 +203,7 @@ class SessionStore:
         state.authenticated_email = str(email).strip().lower()
         state.authenticated_name = str(name).strip()
         state.authenticated_profile = normalized_profile
+        state.wipe_recovery()
         state.last_activity = time.time()
         return state
 
@@ -204,6 +215,36 @@ class SessionStore:
         state.authenticated_profile = ""
         state.custom_base_table = None
         state.custom_base_revision = ""
+        state.wipe_recovery()
+
+    def set_recovery(self, key: str, *, email: str, access_token: str) -> None:
+        encoded = str(access_token or "").encode("utf-8")
+        if not encoded or len(encoded) > 8192:
+            raise ValueError("Sessão de recuperação inválida.")
+        state = self.state(key)
+        state.wipe_recovery()
+        state.recovery_email = str(email or "").strip().lower()
+        state.recovery_access_token = bytearray(encoded)
+        state.recovery_verified_at = time.time()
+
+    def recovery_context(self, key: str, *, max_age_seconds: int) -> tuple[str, str]:
+        state = self.state(key)
+        if (
+            not state.recovery_email
+            or not state.recovery_access_token
+            or time.time() - state.recovery_verified_at > max_age_seconds
+        ):
+            state.wipe_recovery()
+            raise KeyError("Sessão de recuperação ausente ou expirada.")
+        try:
+            token = bytes(state.recovery_access_token).decode("utf-8")
+        except UnicodeDecodeError as exc:
+            state.wipe_recovery()
+            raise KeyError("Sessão de recuperação inválida.") from exc
+        return state.recovery_email, token
+
+    def clear_recovery(self, key: str) -> None:
+        self.state(key).wipe_recovery()
 
     def touch(self, key: str) -> None:
         with self._guard:
@@ -412,6 +453,7 @@ class SessionStore:
             state.authenticated_email = ""
             state.authenticated_name = ""
             state.authenticated_profile = ""
+            state.wipe_recovery()
             state.custom_base_table = None
             state.custom_base_revision = ""
             state.financial_upload_ids = []

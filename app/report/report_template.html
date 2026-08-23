@@ -473,6 +473,19 @@ body[data-theme="light"] .categoryRowLabel,body:not([data-theme]) .categoryRowLa
 @media screen and (max-width:720px){.reportViewport>.wrap{width:auto;transform:none}}
 @media print{.reportViewport{display:block!important;width:auto!important;height:auto!important;overflow:visible!important}.reportViewport>.wrap{width:auto!important;max-width:none!important;transform:none!important}}
 </style>
+<style id="report-sticky-filters">
+@media screen{
+  .reportFilterStickyHost{position:relative;z-index:6000}
+  .reportFilterStickyHost>.filters{position:static;top:auto;z-index:1;isolation:isolate}
+  .filters.isViewportPinned{position:fixed;top:0;right:auto;margin:0;z-index:6000;transform-origin:top left}
+}
+@media screen and (max-width:720px){
+  .reportFilterStickyHost{position:sticky;top:0}
+}
+@media print{
+  .reportFilterStickyHost,.reportFilterStickyHost>.filters{position:static!important}
+}
+</style>
 <style>__ACTION_FEEDBACK_STYLES__</style>
 </head>
 <body>
@@ -481,7 +494,7 @@ body[data-theme="light"] .categoryRowLabel,body:not([data-theme]) .categoryRowLa
   <header class="top"><div><div class="eyebrow">CONTAS A PAGAR • CONTROLE FINANCEIRO</div><h1>Previsto x Realizado</h1></div><div class="topControls"><button type="button" class="download" id="reportBaseBtn">Base de Dados</button><button type="button" class="download" id="reportLogoutBtn">Sair</button><div class="themeToggle" role="group" aria-label="Alternar tema do relatório"><button type="button" class="themeBtn isActive" id="themeLightBtn" data-theme-value="light" aria-label="Usar tema claro" title="Tema claro" aria-pressed="true">☀</button><button type="button" class="themeBtn" id="themeDarkBtn" data-theme-value="dark" aria-label="Usar tema escuro" title="Tema escuro" aria-pressed="false">☾</button></div><div class="period" id="period"></div></div></header>
   <div id="printFilterSummary" class="printOnly filterPrintSummary"></div>
   <nav class="toolbar" id="downloads"></nav>
-  <section class="filters" aria-label="Filtros do relatório">
+  <div id="reportFilterStickyHost" class="reportFilterStickyHost"><section class="filters" aria-label="Filtros do relatório">
     <details class="multiFilter" id="mfCategory"><summary><span class="multiFilterName">Categoria</span><span class="multiFilterValue" id="mfCategoryLabel">Todas</span></summary><div class="multiFilterMenu" id="mfCategoryOptions"></div></details>
     <details class="multiFilter" id="mfFlow"><summary><span class="multiFilterName">Fluxo JMM</span><span class="multiFilterValue" id="mfFlowLabel">Todos</span></summary><div class="multiFilterMenu" id="mfFlowOptions"></div></details>
     <details class="multiFilter" id="mfSupplier"><summary><span class="multiFilterName">Fornecedor</span><span class="multiFilterValue" id="mfSupplierLabel">Todos</span></summary><div class="multiFilterMenu" id="mfSupplierOptions"></div></details>
@@ -489,7 +502,7 @@ body[data-theme="light"] .categoryRowLabel,body:not([data-theme]) .categoryRowLa
     <div class="filterSearchWrap"><input id="fSearch" class="filterSearch" placeholder="Buscar fornecedor/título • ex.: fornecedor A, fornecedor B" aria-label="Pesquisar fornecedor ou título" /><button type="button" class="info searchInfo" aria-label="Como usar a pesquisa" data-tip="Pesquisa nos campos Fornecedor, nome do fornecedor como veio no arquivo de origem e Título. Para pesquisar mais de um valor ao mesmo tempo, separe os termos por vírgula. Exemplo: Fornecedor A, Fornecedor B. O relatório mostrará registros que correspondam a pelo menos um dos termos informados.">i</button></div>
     <button type="button" id="applyFilters" class="applyFilters">Aplicar Filtros</button>
     <button type="button" id="clearFilters" class="clearFilters">Limpar filtros</button>
-  </section>
+  </section></div>
   <section class="warningsSection" id="warningSection"><div class="warningsHeader"><h2>Avisos</h2><span>Inconsistências e adaptações identificadas no arquivo importado</span></div><div id="warnings" class="warnings"></div></section>
   <section id="kpis" class="kpis"></section>
   <section class="card"><div class="cardHead"><h2>Leitura executiva</h2><button class="info" id="infoSummary">i</button></div><div class="hint">Resumo determinístico com base nos dados filtrados</div><div id="summary" class="summary"></div></section>
@@ -518,6 +531,11 @@ const actionFeedback=window.ActionFeedback.create();
 let reportScreenScaleFrame=0,reportScreenScaleObserver=null;
 function scheduleReportScreenScale(){if(reportScreenScaleFrame)cancelAnimationFrame(reportScreenScaleFrame);reportScreenScaleFrame=requestAnimationFrame(()=>{reportScreenScaleFrame=0;let viewport=el('reportViewport'),content=viewport&&viewport.querySelector('.wrap');if(!viewport||!content)return;viewport.style.height=matchMedia('(min-width:721px)').matches&&!matchMedia('print').matches?Math.ceil(content.getBoundingClientRect().height)+'px':''})}
 function initReportScreenScale(){let viewport=el('reportViewport'),content=viewport&&viewport.querySelector('.wrap');if(!viewport||!content)return;if('ResizeObserver'in window){reportScreenScaleObserver=new ResizeObserver(scheduleReportScreenScale);reportScreenScaleObserver.observe(content)}window.addEventListener('resize',scheduleReportScreenScale);window.addEventListener('afterprint',scheduleReportScreenScale);scheduleReportScreenScale()}
+let reportFilterPinFrame=0,reportFilterHost=null,reportFilters=null;
+function releaseReportFiltersPin(){if(!reportFilterHost||!reportFilters)return;if(reportFilters.parentElement!==reportFilterHost)reportFilterHost.appendChild(reportFilters);reportFilters.classList.remove('isViewportPinned');['left','width','transform'].forEach(name=>reportFilters.style.removeProperty(name));reportFilterHost.style.removeProperty('height')}
+function updateReportFiltersPin(){if(!reportFilterHost||!reportFilters)return;let needsScaledFallback=matchMedia('(min-width:721px)').matches&&!matchMedia('print').matches;if(!needsScaledFallback){releaseReportFiltersPin();return}let rect=reportFilterHost.getBoundingClientRect();if(rect.top>0){releaseReportFiltersPin();return}if(reportFilters.parentElement===reportFilterHost){reportFilterHost.style.height=reportFilters.offsetHeight+'px';rect=reportFilterHost.getBoundingClientRect();document.body.appendChild(reportFilters);reportFilters.classList.add('isViewportPinned')}let scale=reportFilterHost.offsetWidth?rect.width/reportFilterHost.offsetWidth:1;reportFilters.style.left=rect.left+'px';reportFilters.style.width=reportFilterHost.offsetWidth+'px';reportFilters.style.transform=`scale(${scale})`}
+function scheduleReportFiltersPin(){if(reportFilterPinFrame)return;reportFilterPinFrame=requestAnimationFrame(()=>{reportFilterPinFrame=0;updateReportFiltersPin()})}
+function initReportFiltersPin(){reportFilterHost=el('reportFilterStickyHost');reportFilters=reportFilterHost&&reportFilterHost.querySelector('.filters');if(!reportFilterHost||!reportFilters)return;window.addEventListener('scroll',scheduleReportFiltersPin,{passive:true});window.addEventListener('resize',scheduleReportFiltersPin);window.addEventListener('beforeprint',releaseReportFiltersPin);window.addEventListener('afterprint',scheduleReportFiltersPin);scheduleReportFiltersPin()}
 let state={category:[],flow:[],supplier:[],emissionMode:'month',emission:[],search:'',months:[],categorySeries:'both'};
 const ALL_ITEMS=[...(D.previsto||[]),...(D.realizado||[])];
 const FACET_CONFIG={
@@ -549,7 +567,14 @@ function pruneUnavailableSelections(){let changed=false;for(let round=0;round<4;
 function refreshFilterOptions(){pruneUnavailableSelections();paintStandardFilter('category');paintStandardFilter('flow');paintStandardFilter('supplier');paintEmissionFilter();refreshMonthFilterOptions()}
 function applyFiltersNow(){refreshFilterOptions();render()}
 function buildMultiFilter(rootId,key){const box=el(rootId+'Options');box.addEventListener('change',e=>{if(!(e.target instanceof HTMLInputElement))return;state[key]=[...box.querySelectorAll('input:checked')].map(x=>x.value);applyFiltersNow()})}
+const REPORT_FILTER_HOVER=matchMedia('(hover: hover) and (pointer: fine)'),REPORT_FILTER_CLOSE_DELAY=200;
+let reportFilterCloseTimer=0,reportFiltersOpenedByHover=new WeakSet();
+function reportTopFilters(){return [...document.querySelectorAll('.filters details.multiFilter')]}
+function cancelReportFilterClose(){if(reportFilterCloseTimer){clearTimeout(reportFilterCloseTimer);reportFilterCloseTimer=0}}
+function closeOtherReportFilters(active=null){reportTopFilters().forEach(filter=>{if(filter!==active){filter.open=false;reportFiltersOpenedByHover.delete(filter)}})}
+function initReportFilterInteractions(){const filters=reportTopFilters();filters.forEach(filter=>{let summary=filter.querySelector('summary');filter.addEventListener('toggle',()=>{if(filter.open)closeOtherReportFilters(filter);else reportFiltersOpenedByHover.delete(filter)});filter.addEventListener('pointerenter',event=>{if(!REPORT_FILTER_HOVER.matches||event.pointerType!=='mouse')return;cancelReportFilterClose();closeOtherReportFilters(filter);if(!filter.open){reportFiltersOpenedByHover.add(filter);filter.open=true}});filter.addEventListener('pointerleave',event=>{if(!REPORT_FILTER_HOVER.matches||event.pointerType!=='mouse')return;cancelReportFilterClose();reportFilterCloseTimer=setTimeout(()=>{filter.open=false;reportFiltersOpenedByHover.delete(filter);reportFilterCloseTimer=0},REPORT_FILTER_CLOSE_DELAY)});summary.addEventListener('click',event=>{if(event.detail>0&&filter.open&&reportFiltersOpenedByHover.has(filter)){event.preventDefault();reportFiltersOpenedByHover.delete(filter)}})});document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;let opened=filters.filter(filter=>filter.open);if(!opened.length)return;let focused=opened.find(filter=>filter.contains(document.activeElement));cancelReportFilterClose();opened.forEach(filter=>{filter.open=false;reportFiltersOpenedByHover.delete(filter)});if(focused)focused.querySelector('summary').focus();event.preventDefault()})}
 buildMultiFilter('mfCategory','category');buildMultiFilter('mfFlow','flow');buildMultiFilter('mfSupplier','supplier');
+initReportFilterInteractions();
 el('period').textContent=D.period;el('footer').textContent=`Gerado em ${new Date(D.generatedAt).toLocaleString('pt-BR')} • Fontes: ${D.sourceName}`;
 const links=[['previsto','Excel • Previsto'],['realizado','Excel • Realizado'],['atualizado','Planilha atualizada do relatório']].filter(([k])=>D.downloads[k]);el('downloads').innerHTML=`<button type="button" class="download primary" id="printFilteredPdf">Salvar PDF com filtros atuais</button>`+links.map(([k,t])=>`<a class="download" href="${esc(D.downloads[k])}" download data-download-feedback>${t}</a>`).join('');
 document.addEventListener('click',event=>{let link=event.target.closest&&event.target.closest('a[data-download-feedback],a[href="/api/base/export"]');if(link)actionFeedback.info('Download solicitado ao navegador.','report-export')});
@@ -636,7 +661,7 @@ function refreshMonthFilterOptions(){const eligible=ALL_ITEMS.filter(pass),month
 function buildMonthFilter(){const box=el('monthFilterOptions');box.addEventListener('change',e=>{if(!(e.target instanceof HTMLInputElement))return;state.months=[...box.querySelectorAll('input:checked')].map(x=>x.value);updateMonthFilterLabel();render()});el('clearMonthFilter').addEventListener('click',()=>{state.months=[];refreshMonthFilterOptions();render();el('monthFilter').open=false})}
 function currentFilterSummary(){let parts=[];if(state.category.length)parts.push(`Categoria: ${state.category.join(', ')}`);if(state.flow.length)parts.push(`Fluxo JMM: ${state.flow.join(', ')}`);if(state.supplier.length)parts.push(`Fornecedor: ${state.supplier.join(', ')}`);if(state.emission.length)parts.push(`${state.emissionMode==='date'?'Pagamento/Mês (data)':'Pagamento/Mês (mês/ano)'}: ${state.emission.map(v=>emissionOptionLabel(v)).join(', ')}`);if(state.search.trim())parts.push(`Pesquisa: ${state.search.trim()}`);if(state.months.length)parts.push(`Mês somente na visão mensal: ${state.months.map(m=>monthLabel(m+'-01',true)).join(', ')}`);if(state.categorySeries!=='both')parts.push(`Gráfico por categoria: ${state.categorySeries==='planned'?'Previsto':'Realizado'}`);return parts.length?parts.join(' • '):'Filtros: padrões iniciais (todos os dados)'}
 function updatePrintFilterSummary(){el('printFilterSummary').textContent='Filtros aplicados neste PDF: '+currentFilterSummary()}
-function preparePrint(){updatePrintFilterSummary();fitReportValues()}function restoreAfterPrint(){}
+function preparePrint(){releaseReportFiltersPin();updatePrintFilterSummary();fitReportValues()}function restoreAfterPrint(){scheduleReportFiltersPin()}
 window.addEventListener('beforeprint',preparePrint);window.addEventListener('afterprint',restoreAfterPrint);
 el('printFilteredPdf').addEventListener('click',()=>{actionFeedback.info('Preparando o PDF com os filtros atuais...','report-export');preparePrint();setTimeout(()=>window.print(),30)});
 function syncStateFromFilterControls(){state.category=[...el('mfCategoryOptions').querySelectorAll('input:checked')].map(x=>x.value);state.flow=[...el('mfFlowOptions').querySelectorAll('input:checked')].map(x=>x.value);state.supplier=[...el('mfSupplierOptions').querySelectorAll('input:checked')].map(x=>x.value);let mode=el('mfEmission').querySelector('input[name="emissionMode"]:checked');state.emissionMode=mode&&mode.value==='date'?'date':'month';state.emission=[...el('mfEmissionOptions').querySelectorAll('input:checked')].map(x=>x.value);state.search=el('fSearch').value.trim();state.months=[...el('monthFilterOptions').querySelectorAll('input:checked')].map(x=>x.value);state.categorySeries=el('categorySeriesFilter').value}
@@ -682,6 +707,6 @@ el('reportConflictClose').addEventListener('click',cancelReportConflicts);el('re
 const infoTip=el('globalInfoTip');let activeInfo=null;function showInfoTip(target){let text=target.getAttribute('data-tip');if(!text)return;activeInfo=target;infoTip.textContent=text;infoTip.style.display='block';infoTip.style.left='12px';infoTip.style.top='12px';requestAnimationFrame(()=>{if(activeInfo!==target)return;let r=target.getBoundingClientRect(),tw=infoTip.offsetWidth,th=infoTip.offsetHeight,left=r.right+10,top=r.top-5;if(left+tw>innerWidth-12)left=Math.max(12,r.left-tw-10);if(top+th>innerHeight-12)top=Math.max(12,innerHeight-th-12);infoTip.style.left=left+'px';infoTip.style.top=top+'px'})}function hideInfoTip(){activeInfo=null;infoTip.style.display='none'}
 window.addEventListener('pageshow',event=>{if(event.persisted)location.reload()});
 document.addEventListener('pointerover',e=>{let t=e.target.closest&&e.target.closest('.info[data-tip]');if(t)showInfoTip(t)});document.addEventListener('pointerout',e=>{let t=e.target.closest&&e.target.closest('.info[data-tip]');if(t&&!t.contains(e.relatedTarget))hideInfoTip()});document.addEventListener('focusin',e=>{let t=e.target.closest&&e.target.closest('.info[data-tip]');if(t)showInfoTip(t)});document.addEventListener('focusout',e=>{if(e.target.closest&&e.target.closest('.info[data-tip]'))hideInfoTip()});window.addEventListener('scroll',hideInfoTip,true);window.addEventListener('resize',()=>{hideInfoTip();fitReportValues();fitMonthlyViewport()});
-const baseRender=render;render=function(){baseRender();requestAnimationFrame(()=>{fitReportValues();fitMonthlyViewport();updatePrintFilterSummary();scheduleReportScreenScale()})};initReportScreenScale();loadClassificationOptions();render();
+const baseRender=render;render=function(){baseRender();requestAnimationFrame(()=>{fitReportValues();fitMonthlyViewport();updatePrintFilterSummary();scheduleReportScreenScale();scheduleReportFiltersPin()})};initReportScreenScale();initReportFiltersPin();loadClassificationOptions();render();
 </script>
 </body></html>

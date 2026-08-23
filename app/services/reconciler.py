@@ -7,7 +7,7 @@ from typing import Any
 
 from .excel_reader import TableData
 from .normalizer import ValueParseError, find_column, to_date, to_float
-from .text_utils import normalize_supplier, supplier_similarity
+from .text_utils import normalize_text
 
 
 class ReconcileError(RuntimeError):
@@ -32,11 +32,14 @@ def _safe_str(value: Any) -> str:
 def _code(value: Any) -> str:
     if value in (None, ""):
         return ""
-    try:
-        num = float(value)
-        return str(int(num)) if num.is_integer() else str(value).strip()
-    except Exception:
+    if isinstance(value, bool):
         return str(value).strip()
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return str(int(value)) if value.is_integer() else str(value).strip()
+    # Identificadores textuais permanecem textuais: "001" não pode virar "1".
+    return str(value).strip()
 
 
 def _source(row: dict[str, Any]) -> dict[str, Any]:
@@ -94,69 +97,95 @@ def validate_base(base: TableData) -> None:
         raise ReconcileError(f"BASE DADOS inválida: {sample}.")
 
 
-def _build_base(base: TableData) -> tuple[dict[str, dict[str, Any]], dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
+def _build_base(base: TableData) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any] | None]]:
     validate_base(base)
     c_code = find_column(base, "Cód Fornecedor", "Codigo Fornecedor")
     c_name = find_column(base, "Fornecedor")
     c_flow = find_column(base, "Fluxo JMM", "Fluxo")
     c_cat = find_column(base, "Categoria")
     by_code: dict[str, dict[str, Any]] = {}
-    by_name: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    entries: list[dict[str, Any]] = []
+    by_name: dict[str, dict[str, Any] | None] = {}
     for row in base.rows:
         entry = {
             "code": _code(row.get(c_code)),
             "name": _safe_str(row.get(c_name)),
-            "norm": normalize_supplier(row.get(c_name)),
+            "norm": normalize_text(row.get(c_name)),
             "flow": _safe_str(row.get(c_flow)),
             "category": _safe_str(row.get(c_cat)),
             "base_row": int(row.get("__source_row__") or 0),
         }
         by_code[entry["code"]] = entry
-        by_name[entry["norm"]].append(entry)
-        entries.append(entry)
-    return by_code, by_name, entries
+        norm = entry["norm"]
+        if norm:
+            by_name[norm] = entry if norm not in by_name else None
+    return by_code, by_name
 
 
-def _suggestions(name: str, entries: list[dict[str, Any]], limit: int = 3) -> list[dict[str, Any]]:
-    scored: list[tuple[float, dict[str, Any]]] = []
-    for entry in entries:
-        score = supplier_similarity(name, entry["name"])
-        if score >= 0.70:
-            scored.append((score, entry))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return [
-        {
-            "score": round(score, 3),
-            "code": entry["code"],
-            "supplier": entry["name"],
-            "flow": entry["flow"],
-            "category": entry["category"],
-            "base_row": entry["base_row"],
-        }
-        for score, entry in scored[:limit]
-    ]
+def _classification_pair(row: dict[str, Any], flow_column: str | None, category_column: str | None) -> tuple[str, str] | None:
+    if not flow_column or not category_column:
+        return None
+    flow = _safe_str(row.get(flow_column))
+    category = _safe_str(row.get(category_column))
+    if not flow or not category:
+        return None
+    if normalize_text(flow) == "NAO CLASSIFICADO" or normalize_text(category) == "NAO CLASSIFICADO":
+        return None
+    return flow, category
+
+
+def _build_import_history(
+    tables: list[tuple[TableData, str, str | None, str | None]],
+) -> dict[str, tuple[str, str] | None]:
+    candidates: dict[str, set[tuple[str, str]]] = defaultdict(set)
+    for table, code_column, flow_column, category_column in tables:
+        for row in table.rows:
+            code = _code(row.get(code_column))
+            pair = _classification_pair(row, flow_column, category_column)
+            if code and pair:
+                candidates[code].add(pair)
+    return {
+        code: next(iter(pairs)) if len(pairs) == 1 else None
+        for code, pairs in candidates.items()
+    }
 
 
 def _lookup_classification(
     code: str,
     name: str,
     by_code: dict[str, dict[str, Any]],
-    by_name: dict[str, list[dict[str, Any]]],
-    entries: list[dict[str, Any]],
-) -> tuple[dict[str, Any] | None, str, list[dict[str, Any]]]:
-    # 1) Código é a chave determinística principal.
+    by_name: dict[str, dict[str, Any] | None],
+    direct: tuple[str, str] | None,
+    history_by_code: dict[str, tuple[str, str] | None],
+) -> tuple[dict[str, Any] | None, str]:
+    # 1) Código exato da BASE DADOS é a chave determinística principal.
     if code and code in by_code:
-        return by_code[code], "codigo", []
+        return by_code[code], "base_codigo"
 
-    # 2) Nome normalizado EXATO só é aceito se apontar de forma inequívoca para uma única linha da base.
-    norm = normalize_supplier(name)
-    exact_name = by_name.get(norm, []) if norm else []
-    if len(exact_name) == 1:
-        return exact_name[0], "nome_exato", []
+    # 2) Nome normalizado exato só é aceito quando o índice da base é inequívoco.
+    norm = normalize_text(name)
+    exact_name = by_name.get(norm) if norm else None
+    if exact_name is not None:
+        return exact_name, "base_nome"
 
-    # 3) Similaridade nunca classifica automaticamente. Serve somente para sugestão auditável.
-    return None, "nao_classificado", _suggestions(name, entries)
+    # 3) A classificação completa já materializada na própria linha é preservada.
+    if direct:
+        return {"code": code, "name": name, "flow": direct[0], "category": direct[1]}, "planilha_direta"
+
+    # 4) Histórico do mesmo código só vale quando existe um único par no arquivo.
+    historical = history_by_code.get(code) if code else None
+    if historical:
+        return {"code": code, "name": name, "flow": historical[0], "category": historical[1]}, "historico_codigo"
+
+    # 5) Nenhuma aproximação ou valor padrão é aplicado.
+    return None, "nao_resolvida"
+
+
+def _supplier_key(match: str, canonical_code: str, source_code: str, source_name: str) -> str:
+    if match in {"base_codigo", "base_nome"}:
+        return f"BASE:{canonical_code}"
+    if match in {"planilha_direta", "historico_codigo"}:
+        return f"ARQUIVO:{source_code}" if source_code else f"ARQUIVO_NOME:{normalize_text(source_name)}"
+    return f"NAOCLASS:{source_code}:{normalize_text(source_name)}"
 
 
 def _warning(title: str, summary: str, details: list[dict[str, Any]], level: str = "warning") -> dict[str, Any]:
@@ -164,7 +193,7 @@ def _warning(title: str, summary: str, details: list[dict[str, Any]], level: str
 
 
 def reconcile(previsto_table: TableData, realizado_table: TableData, base_table: TableData) -> ReconcileResult:
-    by_code, by_name, base_entries = _build_base(base_table)
+    by_code, by_name = _build_base(base_table)
     warnings: list[dict[str, Any]] = []
 
     pc = _required(previsto_table, "PREVISTO", [
@@ -173,8 +202,24 @@ def reconcile(previsto_table: TableData, realizado_table: TableData, base_table:
         ("date", ("Data prevista",)),
         ("value", ("Valor previsto",)),
     ])
+    rc = _required(realizado_table, "REALIZADO", [
+        ("title", ("Título", "Titulo")),
+        ("code", ("Fornecedor", "Cód Fornecedor")),
+        ("name", ("Nome Fornecedor", "Fornecedor Nome")),
+        ("value", ("Vlr.Original", "Valor Original", "Total")),
+        ("paid", ("Ult. Pgto.", "Ult Pgto", "Data Pagamento")),
+        ("due", ("Vencimento",)),
+    ])
     p_month = find_column(previsto_table, "Mês", "Mes")
     p_title = find_column(previsto_table, "Título Previsto", "Titulo Previsto")
+    p_flow = find_column(previsto_table, "Fluxo JMM", "Fluxo")
+    p_category = find_column(previsto_table, "Categoria")
+    r_flow = find_column(realizado_table, "Fluxo JMM", "Fluxo")
+    r_category = find_column(realizado_table, "Categoria")
+    history_by_code = _build_import_history([
+        (previsto_table, pc["code"], p_flow, p_category),
+        (realizado_table, rc["code"], r_flow, r_category),
+    ])
 
     previsto: list[dict[str, Any]] = []
     p_unclassified: list[dict[str, Any]] = []
@@ -196,20 +241,21 @@ def reconcile(previsto_table: TableData, realizado_table: TableData, base_table:
         if raw_date not in (None, "") and parsed_date is None:
             p_bad_dates.append({**src, "supplier_code": code, "supplier": source_name, "value": value, "raw_date": _safe_str(raw_date)})
 
-        entry, match, suggestions = _lookup_classification(code, source_name, by_code, by_name, base_entries)
+        direct = _classification_pair(row, p_flow, p_category)
+        entry, match = _lookup_classification(code, source_name, by_code, by_name, direct, history_by_code)
         if entry:
             canonical_code = entry["code"]
             supplier = entry["name"]
             flow = entry["flow"]
             category = entry["category"]
-            if match == "nome_exato":
+            if match == "base_nome":
                 p_name_matches.append({**src, "supplier_code": code, "supplier": source_name, "matched_code": canonical_code, "matched_supplier": supplier})
         else:
             canonical_code = ""
             supplier = source_name
             flow = "Não classificado"
             category = "Não classificado"
-            p_unclassified.append({**src, "supplier_code": code, "supplier": source_name, "value": value, "suggestions": suggestions})
+            p_unclassified.append({**src, "supplier_code": code, "supplier": source_name, "value": value, "suggestions": []})
 
         previsto.append({
             "kind": "previsto",
@@ -217,7 +263,7 @@ def reconcile(previsto_table: TableData, realizado_table: TableData, base_table:
             "supplier_code": code,
             "supplier_source": source_name,
             "supplier": supplier,
-            "supplier_key": f"BASE:{canonical_code}" if canonical_code else f"NAOCLASS:{code}:{normalize_supplier(source_name)}",
+            "supplier_key": _supplier_key(match, canonical_code, code, source_name),
             "date": parsed_date.isoformat() if parsed_date else None,
             "value": value,
             "flow": flow,
@@ -227,14 +273,6 @@ def reconcile(previsto_table: TableData, realizado_table: TableData, base_table:
             **src,
         })
 
-    rc = _required(realizado_table, "REALIZADO", [
-        ("title", ("Título", "Titulo")),
-        ("code", ("Fornecedor", "Cód Fornecedor")),
-        ("name", ("Nome Fornecedor", "Fornecedor Nome")),
-        ("value", ("Vlr.Original", "Valor Original", "Total")),
-        ("paid", ("Ult. Pgto.", "Ult Pgto", "Data Pagamento")),
-        ("due", ("Vencimento",)),
-    ])
     r_company = find_column(realizado_table, "Empresa")
     r_emission = find_column(realizado_table, "Emissão", "Emissao")
     r_branch = find_column(realizado_table, "Filial")
@@ -280,13 +318,14 @@ def reconcile(previsto_table: TableData, realizado_table: TableData, base_table:
         if paid and due:
             punctuality = "Antecipado" if paid < due else "Dentro do Prazo" if paid == due else "Atrasado"
 
-        entry, match, suggestions = _lookup_classification(code, source_name, by_code, by_name, base_entries)
+        direct = _classification_pair(row, r_flow, r_category)
+        entry, match = _lookup_classification(code, source_name, by_code, by_name, direct, history_by_code)
         if entry:
             canonical_code = entry["code"]
             supplier = entry["name"]
             flow = entry["flow"]
             category = entry["category"]
-            if match == "nome_exato":
+            if match == "base_nome":
                 r_name_matches.append({
                     **src, "title": title, "supplier_code": code, "supplier": source_name,
                     "matched_code": canonical_code, "matched_supplier": supplier, "value": value,
@@ -298,7 +337,7 @@ def reconcile(previsto_table: TableData, realizado_table: TableData, base_table:
             category = "Não classificado"
             r_unclassified.append({
                 **src, "title": title, "supplier_code": code, "supplier": source_name,
-                "value": value, "suggestions": suggestions,
+                "value": value, "suggestions": [],
             })
 
         realizado.append({
@@ -307,7 +346,7 @@ def reconcile(previsto_table: TableData, realizado_table: TableData, base_table:
             "supplier_code": code,
             "supplier_source": source_name,
             "supplier": supplier,
-            "supplier_key": f"BASE:{canonical_code}" if canonical_code else f"NAOCLASS:{code}:{normalize_supplier(source_name)}",
+            "supplier_key": _supplier_key(match, canonical_code, code, source_name),
             "date": paid.isoformat() if paid else None,
             "emission_date": emission.isoformat() if emission else None,
             "due_date": due.isoformat() if due else None,

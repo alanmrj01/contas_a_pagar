@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import logging
 import os
 import re
@@ -24,6 +25,7 @@ from webapp.security import RuntimeSecurity, SlidingWindowLimiter, request_origi
 from webapp.session_store import SessionStore
 from webapp.supabase_gateway import (
     AuthenticationRejected,
+    RecoveryCodeRejected,
     SupabaseGateway,
     SupabaseUnavailable,
     UserAccessDisabled,
@@ -38,6 +40,8 @@ RESOURCES_DIR = PROJECT_ROOT / "resources"
 COOKIE_NAME = "cap_session"
 SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9À-ÿ._()\- ]+")
 SESSION_CLEANUP_INTERVAL = 10 * 60
+RECOVERY_CONTEXT_TTL_SECONDS = 10 * 60
+RECOVERY_REQUEST_MESSAGE = "Se o e-mail estiver cadastrado, um código de recuperação será enviado. Verifique também a caixa de spam."
 LOGGER = logging.getLogger("contas_a_pagar.auth")
 
 store = SessionStore(PROJECT_ROOT)
@@ -164,7 +168,14 @@ async def session_security_middleware(request: Request, call_next):
     request.state.session_key = sid
     store.begin_request(sid)
     try:
-        public_session_routes = path in {"/", "/api/security/bootstrap", "/api/auth/login"}
+        public_session_routes = path in {
+            "/",
+            "/api/security/bootstrap",
+            "/api/auth/login",
+            "/api/auth/recovery/request",
+            "/api/auth/recovery/verify",
+            "/api/auth/recovery/update",
+        }
         if not public_session_routes and not store.is_authenticated(sid):
             response = JSONResponse(
                 status_code=401,
@@ -231,6 +242,20 @@ class UploadIdRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=1, max_length=512)
+
+
+class PasswordRecoveryRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+
+
+class PasswordRecoveryVerifyRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    code: str = Field(min_length=1, max_length=32)
+
+
+class PasswordRecoveryUpdateRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
+    confirm_password: str = Field(min_length=1, max_length=128)
 
 
 class BaseRowPayload(BaseModel):
@@ -309,6 +334,96 @@ def security_bootstrap(request: Request):
         "session_idle_seconds": store.session_ttl_seconds,
         "authenticated": store.is_authenticated(_sid(request)),
     }
+
+
+def _password_validation_error(password: str) -> str:
+    if len(password) < 8 or not any(character.isalpha() for character in password) or not any(character.isdigit() for character in password):
+        return "Use pelo menos 8 caracteres, incluindo uma letra e um número."
+    return ""
+
+
+@app.post("/api/auth/recovery/request")
+async def api_password_recovery_request(request: Request, payload: PasswordRecoveryRequest):
+    sid = _sid(request)
+    if store.is_authenticated(sid):
+        raise HTTPException(status_code=409, detail="Encerre a sessão atual antes de recuperar outra senha.")
+    peer = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "unknown")).split(",")[0].strip()
+    email_fingerprint = hashlib.sha256(payload.email.strip().casefold().encode("utf-8")).hexdigest()[:24]
+    recovery_rate_key = f"{peer}:{email_fingerprint}"
+    cooldown_ok = limiter.allow(f"recovery-cooldown:{recovery_rate_key}", limit=1, window_seconds=60)
+    window_ok = cooldown_ok and limiter.allow(f"recovery-send:{recovery_rate_key}", limit=3, window_seconds=15 * 60)
+    if not cooldown_ok or not window_ok:
+        raise HTTPException(status_code=429, detail="Aguarde alguns minutos antes de solicitar outro código.")
+    store.clear_recovery(sid)
+    try:
+        await asyncio.to_thread(supabase.request_password_recovery, payload.email)
+    except AuthenticationRejected:
+        # A resposta permanece idêntica para e-mail ausente ou malformado.
+        pass
+    except SupabaseUnavailable as exc:
+        LOGGER.error("Falha externa ao solicitar recuperação: %s", type(exc).__name__)
+    except Exception as exc:
+        LOGGER.error("Falha inesperada ao solicitar recuperação: %s", type(exc).__name__)
+    return {"ok": True, "message": RECOVERY_REQUEST_MESSAGE, "cooldown_seconds": 60}
+
+
+@app.post("/api/auth/recovery/verify")
+async def api_password_recovery_verify(request: Request, payload: PasswordRecoveryVerifyRequest):
+    sid = _sid(request)
+    if store.is_authenticated(sid):
+        raise HTTPException(status_code=409, detail="Encerre a sessão atual antes de recuperar outra senha.")
+    if not limiter.allow(f"recovery-verify:{sid}", limit=8, window_seconds=10 * 60):
+        raise HTTPException(status_code=429, detail="Muitas tentativas de código. Solicite um novo código e aguarde alguns minutos.")
+    try:
+        recovery = await asyncio.to_thread(supabase.verify_recovery_otp, payload.email, payload.code)
+        with store.lock(sid):
+            store.set_recovery(sid, email=recovery.email, access_token=recovery.access_token)
+        return {"ok": True}
+    except (AuthenticationRejected, RecoveryCodeRejected) as exc:
+        raise HTTPException(status_code=400, detail="Código inválido ou expirado. Solicite um novo código e tente novamente.") from exc
+    except SupabaseUnavailable as exc:
+        LOGGER.error("Falha externa ao validar código de recuperação: %s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Não foi possível validar o código no momento. Tente novamente.") from exc
+    except Exception as exc:
+        LOGGER.error("Falha inesperada ao validar código de recuperação: %s", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="Não foi possível validar o código no momento. Tente novamente.") from exc
+
+
+@app.post("/api/auth/recovery/update")
+async def api_password_recovery_update(request: Request, payload: PasswordRecoveryUpdateRequest):
+    sid = _sid(request)
+    if store.is_authenticated(sid):
+        raise HTTPException(status_code=409, detail="Encerre a sessão atual antes de recuperar outra senha.")
+    try:
+        if payload.password != payload.confirm_password:
+            raise HTTPException(status_code=400, detail="As senhas informadas não coincidem.")
+        password_error = _password_validation_error(payload.password)
+        if password_error:
+            raise HTTPException(status_code=400, detail=password_error)
+        if not limiter.allow(f"recovery-update:{sid}", limit=6, window_seconds=10 * 60):
+            raise HTTPException(status_code=429, detail="Muitas tentativas de alteração. Solicite um novo código e aguarde alguns minutos.")
+        try:
+            _email, access_token = store.recovery_context(sid, max_age_seconds=RECOVERY_CONTEXT_TTL_SECONDS)
+        except KeyError as exc:
+            raise HTTPException(status_code=401, detail="Sua confirmação de recuperação expirou. Solicite um novo código.") from exc
+        try:
+            await asyncio.to_thread(supabase.update_recovery_password, access_token, payload.password)
+        except RecoveryCodeRejected as exc:
+            store.clear_recovery(sid)
+            raise HTTPException(status_code=401, detail="Sua confirmação de recuperação expirou. Solicite um novo código.") from exc
+        except SupabaseUnavailable as exc:
+            LOGGER.error("Falha externa ao atualizar senha recuperada: %s", type(exc).__name__)
+            raise HTTPException(status_code=503, detail="Não foi possível atualizar a senha no momento. Tente novamente.") from exc
+        try:
+            await asyncio.to_thread(supabase.end_recovery_session, access_token)
+        except SupabaseUnavailable as exc:
+            LOGGER.warning("Sessão de recuperação já atualizada não pôde ser revogada imediatamente: %s", type(exc).__name__)
+        store.destroy_session(sid)
+        request.state.session_destroyed = True
+        return {"ok": True, "message": "Senha atualizada com sucesso. Entre novamente usando a nova senha."}
+    finally:
+        payload.password = ""
+        payload.confirm_password = ""
 
 
 @app.post("/api/auth/login")

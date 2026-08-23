@@ -309,6 +309,45 @@ def test_report_initial_screen_scale_is_layout_based_responsive_and_print_safe()
     assert ".style.zoom" not in TEMPLATE
 
 
+def test_filter_bar_is_sticky_on_desktop_and_reduced_width_but_not_print():
+    assert 'id="report-sticky-filters"' in TEMPLATE
+    sticky_css = TEMPLATE.split('<style id="report-sticky-filters">', 1)[1].split('</style>', 1)[0]
+    assert '@media screen{' in sticky_css
+    assert '.reportFilterStickyHost{position:relative;z-index:6000}' in sticky_css
+    assert '.filters.isViewportPinned{position:fixed;top:0' in sticky_css
+    assert '@media screen and (max-width:720px)' in sticky_css
+    assert '.reportFilterStickyHost{position:sticky;top:0}' in sticky_css
+    assert '@media print{' in sticky_css
+    assert '.reportFilterStickyHost,.reportFilterStickyHost>.filters{position:static!important}' in sticky_css
+    assert 'id="reportFilterStickyHost" class="reportFilterStickyHost"' in TEMPLATE
+    assert "let needsScaledFallback=matchMedia('(min-width:721px)').matches&&!matchMedia('print').matches" in TEMPLATE
+    assert "window.addEventListener('scroll',scheduleReportFiltersPin,{passive:true})" in TEMPLATE
+    assert 'requestAnimationFrame' in TEMPLATE.split('function scheduleReportFiltersPin()', 1)[1].split('\n', 1)[0]
+    assert "window.addEventListener('beforeprint',releaseReportFiltersPin)" in TEMPLATE
+
+
+def test_top_filters_support_hover_click_keyboard_escape_and_touch_fallback():
+    assert "matchMedia('(hover: hover) and (pointer: fine)')" in TEMPLATE
+    assert 'REPORT_FILTER_CLOSE_DELAY=200' in TEMPLATE
+    interactions = TEMPLATE.split('function initReportFilterInteractions()', 1)[1].split("buildMultiFilter('mfCategory'", 1)[0]
+    assert "document.querySelectorAll('.filters details.multiFilter')" in TEMPLATE
+    assert "filter.addEventListener('pointerenter'" in interactions
+    assert "filter.addEventListener('pointerleave'" in interactions
+    assert "event.pointerType!=='mouse'" in interactions
+    assert 'setTimeout(()=>{filter.open=false' in interactions
+    assert 'closeOtherReportFilters(filter)' in interactions
+    assert "filter.addEventListener('toggle'" in interactions
+    assert "summary.addEventListener('click'" in interactions
+    assert 'event.detail>0&&filter.open&&reportFiltersOpenedByHover.has(filter)' in interactions
+    assert 'event.preventDefault();reportFiltersOpenedByHover.delete(filter)' in interactions
+    assert "event.key!=='Escape'" in interactions
+    assert "focused.querySelector('summary').focus()" in interactions
+    assert 'event.preventDefault()' in interactions
+    assert 'initReportFilterInteractions();' in TEMPLATE
+    assert '.checked=' not in interactions
+    assert 'applyFiltersNow' not in interactions
+
+
 def test_updated_reimportable_workbook_download_is_exposed():
     assert "['atualizado','Planilha atualizada do relatório']" in TEMPLATE
     excel_source = (ROOT / 'app' / 'services' / 'excel_export.py').read_text(encoding='utf-8')

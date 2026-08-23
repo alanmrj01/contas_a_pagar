@@ -14,7 +14,7 @@
       <img class="login-logo" src="/resources/contas_a_pagar_logo.png" alt="Contas a Pagar" />
       <div class="eyebrow">CONTAS A PAGAR</div>
       <h1 id="loginTitle">Acesso seguro</h1>
-      <p>Entre para consultar relatórios financeiros e sua Base de Dados protegida.</p>
+      <p id="loginIntro">Entre para consultar relatórios financeiros e sua Base de Dados protegida.</p>
       <form id="loginForm" autocomplete="on">
         <label for="email">E-mail</label>
         <input id="email" name="email" type="email" autocomplete="email" placeholder="usuario@empresa.com.br" required maxlength="320" inputmode="email" autocapitalize="none" spellcheck="false" autofocus />
@@ -31,7 +31,48 @@
         </div>
         <div id="loginError" class="login-error" role="alert" aria-live="polite"></div>
         <button id="loginButton" type="submit">Entrar</button>
+        <button id="forgotPassword" class="text-button" type="button">Esqueci minha senha</button>
       </form>
+      <section id="recoveryPanel" class="recovery-panel" aria-labelledby="recoveryTitle" hidden>
+        <h2 id="recoveryTitle">Recuperar senha</h2>
+        <p id="recoveryIntro">Informe seu e-mail completo para receber um código de recuperação.</p>
+
+        <form id="recoveryRequestForm" autocomplete="on">
+          <label for="recoveryEmail">E-mail</label>
+          <input id="recoveryEmail" name="recoveryEmail" type="email" autocomplete="email" placeholder="usuario@empresa.com.br" required maxlength="320" inputmode="email" autocapitalize="none" spellcheck="false" />
+          <button id="sendRecoveryCode" type="submit">Enviar código</button>
+        </form>
+
+        <form id="recoveryVerifyForm" autocomplete="on" hidden>
+          <label for="recoveryCode">Código recebido por e-mail</label>
+          <input id="recoveryCode" name="recoveryCode" type="text" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" placeholder="000000" required />
+          <button id="verifyRecoveryCode" type="submit">Validar código</button>
+          <button id="resendRecoveryCode" class="text-button" type="button" disabled>Reenviar código</button>
+        </form>
+
+        <form id="recoveryUpdateForm" autocomplete="off" hidden>
+          <label for="newPassword">Nova senha</label>
+          <div class="password-field">
+            <input id="newPassword" name="newPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" required />
+            <button class="password-toggle" type="button" data-password-target="newPassword" aria-label="Mostrar nova senha" aria-pressed="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" /><circle cx="12" cy="12" r="2.6" /><path class="eye-slash" d="m4 4 16 16" /></svg>
+            </button>
+          </div>
+          <label for="confirmNewPassword">Confirmar nova senha</label>
+          <div class="password-field">
+            <input id="confirmNewPassword" name="confirmNewPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" required />
+            <button class="password-toggle" type="button" data-password-target="confirmNewPassword" aria-label="Mostrar confirmação da senha" aria-pressed="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" /><circle cx="12" cy="12" r="2.6" /><path class="eye-slash" d="m4 4 16 16" /></svg>
+            </button>
+          </div>
+          <p class="password-help">Use pelo menos 8 caracteres, incluindo uma letra e um número.</p>
+          <button id="updateRecoveredPassword" type="submit">Atualizar senha</button>
+        </form>
+
+        <div id="recoveryMessage" class="login-message" role="status" aria-live="polite"></div>
+        <div id="recoveryError" class="login-error" role="alert" aria-live="polite"></div>
+        <button id="backToLogin" class="secondary-button" type="button">Voltar para o login</button>
+      </section>
       <p class="security-note">Dados criptografados em trânsito e em armazenamento temporário, com descriptografia apenas durante o processamento necessário.</p>
     </section>
   </main>
