@@ -17,10 +17,12 @@
     pendingBaseConflicts: [],
     baseItems: [],
     baseEditing: false,
+    baseTableController: null,
     security: null,
     serverPublicKey: null,
   };
   const spinnerFrames = ['◜','◝','◞','◟'];
+  const actionFeedback = window.ActionFeedback.create();
 
   function esc(value) {
     return String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -28,12 +30,6 @@
 
   function fileKey(file, index) {
     return `${index}|${file.name}|${file.size}|${file.lastModified}`;
-  }
-
-  function showMessage(title, message) {
-    el('messageTitle').textContent = title;
-    el('messageText').innerHTML = `<p>${esc(message)}</p>`;
-    el('messageDialog').showModal();
   }
 
   function isFileReadAccessError(error) {
@@ -365,32 +361,56 @@
   }
 
   function renderValidation(summary) {
-    let html = '<div><p><b class="blue">O que foi reconhecido</b></p><table>';
-    html += `<tr><td><b>PREVISTO</b></td><td>${summary.previsto} registros em ${summary.previsto_tables} tabela(s)</td></tr>`;
-    html += `<tr><td><b>REALIZADO</b></td><td>${summary.realizado} registros em ${summary.realizado_tables} tabela(s)</td></tr>`;
-    const autoAdded = Number(summary.base_health?.auto_added_suppliers || 0);
-    html += `<tr><td><b>BASE DADOS</b></td><td>${summary.base} registros${autoAdded ? ` • ${autoAdded} complementado(s) automaticamente pela planilha` : ''}</td></tr>`;
-    html += `<tr><td><b>Período</b></td><td>${esc(summary.period)}</td></tr></table>`;
-    if (summary.base_health && summary.base_health.status === 'attention') {
-      const names = (summary.base_health.suppliers || []).map(esc).join(', ');
-      html += '<p><b class="warning">Classificação incompleta após complemento automático</b></p>';
-      html += `<div class="analysis-placeholder"><b>${esc(summary.base_health.message)}</b>${names ? `<br><span>Fornecedor(es) ainda sem classificação segura: ${names}</span>` : ''}<br><span>Confira no arquivo importado se <b>Cód Fornecedor, Fornecedor, Fluxo JMM e Categoria</b> estão preenchidos e consistentes. Corrija a própria planilha e valide novamente.</span></div>`;
-    } else if (summary.base_health && summary.base_health.status === 'ok') {
-      html += `<p class="good"><b>${esc(summary.base_health.message)}</b></p>`;
+    const baseHealth = summary.base_health || null;
+    const baseNeedsAttention = baseHealth?.status === 'attention';
+    const notes = Array.isArray(summary.notes) ? summary.notes : [];
+    const warnings = Array.isArray(summary.warnings) ? summary.warnings : [];
+    const autoAdded = Number(baseHealth?.auto_added_suppliers || 0);
+    const count = value => (Number(value) || 0).toLocaleString('pt-BR');
+    const sectionTitle = (number, title) => `<div class="analysis-group-title"><span aria-hidden="true">${number}</span><h4>${title}</h4></div>`;
+
+    let html = '<div class="analysis-summary">';
+    html += `<section class="analysis-group analysis-found">${sectionTitle(1, 'O que foi encontrado')}<div class="analysis-facts">`;
+    html += `<div class="analysis-fact"><span>PREVISTO</span><strong>${count(summary.previsto)} registro(s)</strong><small>Encontrado(s) em ${count(summary.previsto_tables)} tabela(s).</small></div>`;
+    html += `<div class="analysis-fact"><span>REALIZADO</span><strong>${count(summary.realizado)} registro(s)</strong><small>Encontrado(s) em ${count(summary.realizado_tables)} tabela(s).</small></div>`;
+    html += `<div class="analysis-fact"><span>BASE DE DADOS</span><strong>${count(summary.base)} registro(s)</strong><small>${autoAdded ? `${count(autoAdded)} fornecedor(es) novo(s) complementado(s) com dados completos da planilha.` : 'Base utilizada para conferir as classificações.'}</small></div>`;
+    html += `<div class="analysis-fact"><span>PERÍODO</span><strong>${esc(summary.period)}</strong><small>Período identificado nos arquivos validados.</small></div></div></section>`;
+
+    html += `<section class="analysis-group analysis-correct">${sectionTitle(2, 'O que está correto')}<ul class="analysis-check-list">`;
+    html += '<li>Os arquivos foram lidos e a validação terminou sem modificar os documentos originais.</li>';
+    if (baseHealth?.status === 'ok') html += `<li>${esc(baseHealth.message)}</li>`;
+    if (!warnings.length) html += '<li>Nenhum aviso de consistência foi identificado nesta validação.</li>';
+    html += '</ul></section>';
+
+    html += `<section class="analysis-group analysis-attention">${sectionTitle(3, 'O que precisa de atenção')}`;
+    if (baseNeedsAttention) {
+      const names = (baseHealth.suppliers || []).map(esc).join(', ');
+      html += `<div class="analysis-alert"><strong>Algumas classificações continuam incompletas.</strong><p>${esc(baseHealth.message)}</p>${names ? `<p><b>Fornecedores que precisam ser conferidos:</b> ${names}</p>` : ''}</div>`;
     }
-    if (summary.notes && summary.notes.length) {
-      html += '<p><b class="light-blue">Observações da leitura</b></p><ul>';
-      html += summary.notes.map(note => `<li>${esc(note)}</li>`).join('');
+    if (warnings.length) {
+      html += '<ul class="analysis-attention-list">';
+      html += warnings.map(warning => `<li><strong>${esc(warning.title)}</strong><span>${esc(warning.summary)}</span></li>`).join('');
       html += '</ul>';
     }
-    if (summary.warnings && summary.warnings.length) {
-      html += '<p><b class="warning">Pontos de atenção</b></p><ul>';
-      html += summary.warnings.map(w => `<li><b>${esc(w.title)}</b>: ${esc(w.summary)}</li>`).join('');
-      html += '</ul>';
+    if (!baseNeedsAttention && !warnings.length) html += '<p class="analysis-no-attention">Nenhum ponto de atenção foi indicado.</p>';
+    html += '</section>';
+
+    html += `<section class="analysis-group analysis-meaning">${sectionTitle(4, 'O que isso significa')}<p>Os dados reconhecidos acima estão prontos para compor o relatório. Informações ausentes ou ambíguas não são preenchidas automaticamente.</p>`;
+    if (notes.length) {
+      html += '<div class="analysis-reading-notes"><b>Observações sobre a leitura dos arquivos:</b><ul>';
+      html += notes.map(note => `<li>${esc(note)}</li>`).join('');
+      html += '</ul></div>';
     } else {
-      html += '<p class="good"><b>Nenhum aviso de consistência foi identificado nesta validação.</b></p>';
+      html += '<p class="analysis-muted">Não houve observações adicionais sobre a leitura.</p>';
     }
-    html += '</div>';
+    html += '</section>';
+
+    html += `<section class="analysis-group analysis-next">${sectionTitle(5, 'O que o usuário deve fazer')}<ol class="analysis-action-list">`;
+    html += '<li>Confira se as quantidades e o período encontrados correspondem aos arquivos enviados.</li>';
+    if (baseNeedsAttention) html += '<li>Complete na planilha os campos Cód Fornecedor, Fornecedor, Fluxo JMM e Categoria indicados acima e valide o arquivo novamente.</li>';
+    if (warnings.length) html += '<li>Leia os pontos de atenção. Se algum deles indicar uma informação ausente ou incorreta, corrija o arquivo de origem e valide novamente.</li>';
+    html += `<li>${baseNeedsAttention || warnings.length ? 'Se os avisos forem esperados e os dados encontrados estiverem corretos, clique em Gerar relatório.' : 'Se estiver tudo correto, clique em Gerar relatório.'}</li>`;
+    html += '</ol></section></div>';
     el('analysisDetails').innerHTML = html;
   }
 
@@ -476,7 +496,7 @@
   async function openBaseDialog() {
     if (state.busy) return;
     el('baseDialogInfo').textContent = 'Carregando BASE DADOS...';
-    el('baseTableBody').innerHTML = '<tr><td colspan="4">Carregando...</td></tr>';
+    el('baseTableBody').innerHTML = '<tr><td colspan="5">Carregando...</td></tr>';
     el('baseDialog').showModal();
     try {
       const data = await api('/api/base');
@@ -484,39 +504,54 @@
       state.baseEditing = false;
       renderBaseTable(data);
     } catch (error) {
-      el('baseTableBody').innerHTML = `<tr><td colspan="4" class="danger">${esc(error.message)}</td></tr>`;
+      el('baseTableBody').innerHTML = `<tr><td colspan="5" class="danger">${esc(error.message)}</td></tr>`;
     }
+  }
+
+  function syncBaseEditing(editable) {
+    state.baseEditing = editable;
+    el('editBaseBtn').hidden = editable;
+    el('saveBaseBtn').hidden = !editable;
+    el('cancelBaseEditBtn').hidden = !editable;
+    el('importBaseBtn').disabled = editable;
+  }
+
+  function getBaseTableController() {
+    if (!state.baseTableController) {
+      state.baseTableController = window.BaseTableComponent.create({
+        body: el('baseTableBody'),
+        filterInputs: document.querySelectorAll('#baseDialog [data-base-column-filter]'),
+        status: el('baseTableStatus'),
+        selectPage: el('baseSelectPage'),
+        previous: el('basePreviousPage'),
+        next: el('baseNextPage'),
+        add: el('addBaseRowBtn'),
+        remove: el('removeBaseRowsBtn'),
+        inputClass: 'base-cell-input',
+        checkboxClass: 'base-row-check',
+        columns: 5,
+        pageSize: 200,
+        showError: message => actionFeedback.error(message, 'base-editor'),
+        onEditingChange: syncBaseEditing,
+      });
+    }
+    return state.baseTableController;
   }
 
   function renderBaseTable(data = null) {
     if (data) {
       el('baseDialogInfo').textContent = `BASE DADOS ativa: ${data.rows} registros • ${data.origin}${data.revision && data.revision !== 'padrao' ? ` • revisão ${data.revision}` : ''}`;
     }
-    const editable = state.baseEditing;
-    el('editBaseBtn').hidden = editable;
-    el('saveBaseBtn').hidden = !editable;
-    el('cancelBaseEditBtn').hidden = !editable;
-    el('importBaseBtn').disabled = editable;
-    el('baseTableBody').innerHTML = state.baseItems.map((row, index) => {
-      const cells = ['supplier_code','supplier','flow','category'].map(field => editable
-        ? `<td><input class="base-cell-input" data-row="${index}" data-field="${field}" value="${esc(row[field])}" /></td>`
-        : `<td>${esc(row[field])}</td>`).join('');
-      return `<tr>${cells}</tr>`;
-    }).join('');
+    getBaseTableController().load(state.baseItems);
   }
 
   function collectEditedBase() {
-    return state.baseItems.map((row, index) => {
-      const updated = {...row};
-      document.querySelectorAll(`#baseTableBody [data-row="${index}"]`).forEach(input => {
-        updated[input.dataset.field] = input.value.trim();
-      });
-      return updated;
-    });
+    return getBaseTableController().getItems();
   }
 
   async function saveBaseEdits() {
     if (state.busy || !state.baseEditing) return;
+    actionFeedback.started('Salvando as alterações da Base de Dados...', 'base-save');
     setBusy(true);
     try {
       const items = collectEditedBase();
@@ -526,8 +561,9 @@
       state.baseEditing = false;
       await openBaseDialogRefresh();
       invalidateValidation('BASE DADOS alterada e salva com segurança. Os arquivos financeiros protegidos podem ser reprocessados sem novo envio.');
-      showMessage('Base atualizada', `As alterações foram validadas e salvas na BASE DADOS persistente (${result.base.rows} registros).`);
+      actionFeedback.success(`Alterações salvas. A Base de Dados agora possui ${result.base.rows} registros.`, 'base-save');
     } catch (error) {
+      actionFeedback.error('Não foi possível salvar as alterações da Base de Dados.', 'base-save');
       showGuidedError(errorGuide(error, 'base'));
     } finally {
       setBusy(false);
@@ -550,6 +586,7 @@
       state.pendingBaseConflicts = result.conflicts || [];
       renderBaseConflicts(result.new_rows || 0);
       el('baseConflictDialog').showModal();
+      actionFeedback.noChange('A importação aguarda sua escolha sobre os registros semelhantes. Nenhuma alteração foi feita ainda.', 'base-import');
       return false;
     }
     state.pendingBaseUploadId = '';
@@ -557,7 +594,11 @@
     el('baseInfo').textContent = `BASE DADOS ativa: ${result.base.rows} registros • ${result.base.origin}${result.base.revision && result.base.revision !== 'padrao' ? ` • revisão ${result.base.revision}` : ''}`;
     invalidateValidation('BASE DADOS alterada e salva com segurança. Os arquivos financeiros protegidos podem ser reprocessados sem novo envio.');
     await openBaseDialogRefresh();
-    showMessage('Base atualizada', `${result.added} registro(s) adicionado(s), ${result.ignored || 0} semelhante(s) ignorado(s). A Base persistente agora possui ${result.base.rows} registros.`);
+    if (Number(result.added) > 0) {
+      actionFeedback.success(`Arquivo importado com sucesso. ${result.added} registro(s) adicionado(s) e ${result.ignored || 0} semelhante(s) ignorado(s).`, 'base-import');
+    } else {
+      actionFeedback.noChange(`Nenhum novo registro precisava ser adicionado. ${result.ignored || 0} semelhante(s) foram mantidos sem alteração.`, 'base-import');
+    }
     return true;
   }
 
@@ -582,12 +623,14 @@
 
   async function importBase(file, mode) {
     let uploadId = '';
+    actionFeedback.started('Protegendo e importando a nova Base de Dados...', 'base-import');
     try {
       uploadId = await stageEncryptedFile(file, 'base');
       await submitBaseImport(uploadId, mode);
     } catch (error) {
       if (uploadId) await discardUploads([uploadId]);
       state.pendingBaseUploadId = '';
+      actionFeedback.error('Não foi possível importar a Base de Dados.', 'base-import');
       showGuidedError(errorGuide(error, 'base'));
     }
   }
@@ -642,9 +685,10 @@
   el('baseBtn').addEventListener('click', openBaseDialog);
   el('logoutBtn').addEventListener('click', logout);
   el('baseClose').addEventListener('click', () => el('baseDialog').close());
-  el('editBaseBtn').addEventListener('click', () => { state.baseEditing = true; renderBaseTable(); });
-  el('cancelBaseEditBtn').addEventListener('click', () => { state.baseEditing = false; renderBaseTable(); });
+  el('editBaseBtn').addEventListener('click', () => getBaseTableController().startEditing());
+  el('cancelBaseEditBtn').addEventListener('click', () => getBaseTableController().cancelEditing());
   el('saveBaseBtn').addEventListener('click', saveBaseEdits);
+  el('exportBaseBtn').addEventListener('click', () => actionFeedback.info('Download da Base de Dados solicitado ao navegador.', 'base-export'));
   el('importBaseBtn').addEventListener('click', () => el('baseFileInput').click());
   el('baseFileInput').addEventListener('change', event => {
     const file = event.target.files && event.target.files[0];
@@ -668,17 +712,25 @@
   el('confirmBaseDialog').addEventListener('close', () => { if (el('confirmBaseDialog').returnValue === 'cancel') state.pendingBaseFile = null; });
   el('ignoreBaseConflictsBtn').addEventListener('click', async () => {
     if (!state.pendingBaseUploadId) return;
+    actionFeedback.started('Concluindo a importação da Base de Dados...', 'base-import');
     try {
       const done = await submitBaseImport(state.pendingBaseUploadId, 'append', 'ignore');
       if (done) el('baseConflictDialog').close();
-    } catch (error) { showGuidedError(errorGuide(error, 'base')); }
+    } catch (error) {
+      actionFeedback.error('Não foi possível concluir a importação da Base de Dados.', 'base-import');
+      showGuidedError(errorGuide(error, 'base'));
+    }
   });
   el('saveEditedConflictsBtn').addEventListener('click', async () => {
     if (!state.pendingBaseUploadId) return;
+    actionFeedback.started('Validando as linhas editadas e concluindo a importação...', 'base-import');
     try {
       const done = await submitBaseImport(state.pendingBaseUploadId, 'append', 'edit', collectEditedConflicts());
       if (done) el('baseConflictDialog').close();
-    } catch (error) { showGuidedError(errorGuide(error, 'base')); }
+    } catch (error) {
+      actionFeedback.error('Não foi possível concluir a importação da Base de Dados.', 'base-import');
+      showGuidedError(errorGuide(error, 'base'));
+    }
   });
   async function cancelBaseConflicts() {
     const uploadId = state.pendingBaseUploadId;
@@ -686,6 +738,7 @@
     state.pendingBaseConflicts = [];
     if (uploadId) await discardUploads([uploadId]);
     el('baseConflictDialog').close();
+    actionFeedback.noChange('Importação cancelada. Nenhuma alteração foi feita.', 'base-import');
   }
   el('baseConflictClose').addEventListener('click', cancelBaseConflicts);
   el('cancelBaseConflictsBtn').addEventListener('click', cancelBaseConflicts);

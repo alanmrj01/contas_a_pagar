@@ -49,6 +49,42 @@ def test_web_steps_remain_sequential_and_actions_turn_green_only_when_ready():
     assert ".btn.ready,.action-btn.ready" in CSS
 
 
+def test_validation_result_is_organized_for_non_technical_users_without_changing_its_data():
+    render_validation = JS.split("function renderValidation(summary)", 1)[1].split("async function validateFiles", 1)[0]
+
+    for heading in (
+        "O que foi encontrado",
+        "O que está correto",
+        "O que precisa de atenção",
+        "O que isso significa",
+        "O que o usuário deve fazer",
+    ):
+        assert heading in render_validation
+
+    for source_field in (
+        "summary.previsto",
+        "summary.previsto_tables",
+        "summary.realizado",
+        "summary.realizado_tables",
+        "summary.base",
+        "summary.period",
+        "summary.notes",
+        "summary.warnings",
+        "summary.base_health",
+    ):
+        assert source_field in render_validation
+
+    assert "baseHealth?.status === 'attention'" in render_validation
+    assert "baseHealth?.status === 'ok'" in render_validation
+    assert "map(esc)" in render_validation
+    assert "esc(warning.title)" in render_validation
+    assert "esc(warning.summary)" in render_validation
+    assert ".analysis-summary" in CSS
+    assert ".analysis-facts" in CSS
+    assert ".analysis-attention-list" in CSS
+    assert ".analysis-action-list" in CSS
+
+
 def test_generate_navigates_same_browser_tab_and_visual_assets_are_unchanged():
     assert "window.location.assign(state.reportUrl)" in JS
     assert "stageEncryptedFile" in JS

@@ -176,10 +176,11 @@ def test_top_punctuality_kpi_is_removed_but_audit_data_can_remain_elsewhere():
     assert '@media screen and (min-width:1051px){.kpis{grid-template-columns:repeat(5,1fr)!important}}' in TEMPLATE
 
 
-def test_report_content_starts_at_explicit_100_percent_zoom():
+def test_report_content_uses_layout_scale_instead_of_native_browser_zoom():
     assert 'content="width=device-width,initial-scale=1.0"' in TEMPLATE
-    assert "document.documentElement.style.zoom='1';document.body.style.zoom='1';" in TEMPLATE
-    assert 'html{zoom:1!important}' in TEMPLATE
+    assert '.style.zoom' not in TEMPLATE
+    assert 'html{zoom:' not in TEMPLATE
+    assert ':root{--report-screen-scale:.9}' in TEMPLATE
 
 
 def test_category_chart_compares_named_current_and_previous_months():
@@ -213,6 +214,24 @@ def test_supplier_period_context_and_waterfall_high_contrast_labels_are_present(
     assert 'waterfallValueText' in TEMPLATE
 
 
+def test_waterfall_uses_filtered_rows_and_collision_aware_labels():
+    contribution_fn = TEMPLATE.split('function waterfallContributionData', 1)[1].split('function waterfallLabelsOverlap', 1)[0]
+    render_fn = TEMPLATE.split('function render()', 1)[1].split('function reportMonths', 1)[0]
+    refined_fn = TEMPLATE.split('function waterfallRefined', 1)[1].split('function donut', 1)[0]
+
+    assert "(gr[label]||0)-(gp[label]||0)" in contribution_fn
+    assert "label:'Outros fluxos'" in contribution_fn
+    assert "reduce((sum,row)=>sum+row.v,0)" in contribution_fn
+    assert "let p=D.previsto.filter(pass),r=D.realizado.filter(pass)" in render_fn
+    assert "waterfallRefined(p,r)" in render_fn
+    assert 'function positionWaterfallLabels' in TEMPLATE
+    assert 'waterfallLabelsOverlap(box,other)' in TEMPLATE
+    assert 'waterfallValueLeader' in TEMPLATE
+    assert '<title>' in refined_fn
+    assert 'display:none' not in refined_fn
+    assert 'preferred+(stagger%2?-17:0)' not in refined_fn
+
+
 def test_report_allows_complementary_files_base_editing_and_inline_classification():
     assert 'id="reportBaseBtn"' in TEMPLATE
     assert 'Adicionar dados complementares' in TEMPLATE
@@ -222,6 +241,72 @@ def test_report_allows_complementary_files_base_editing_and_inline_classificatio
     assert 'data-bulk-flow' in TEMPLATE
     assert 'data-bulk-category' in TEMPLATE
     assert 'Atualizar relatório' in TEMPLATE
+
+
+def test_warning_classification_rows_have_accessible_selection_and_manual_apply_feedback():
+    assert 'class="classificationRow${usable?' in TEMPLATE
+    assert 'data-class-row="${warningIndex}"' in TEMPLATE
+    assert 'tabindex="0" role="checkbox" aria-checked="false"' in TEMPLATE
+    assert 'aria-label="Selecionar linha de ${esc(supplierLabel)}"' in TEMPLATE
+    assert "event.target.closest('input,select,button,a,label,textarea')" in TEMPLATE
+    assert "event.key==='Enter'||event.key===' '" in TEMPLATE
+    assert 'function syncClassificationRow' in TEMPLATE
+    assert "row.classList.toggle('isSelected',check.checked)" in TEMPLATE
+    assert 'data-class-status="${warningIndex}" role="status" aria-live="polite"' in TEMPLATE
+    assert 'Valores aplicados à tabela. Atualize o relatório.' in TEMPLATE
+
+    apply_values = TEMPLATE.split("else if(fill)", 1)[1].split("else if(submit)", 1)[0]
+    assert 'location.replace' not in apply_values
+    assert 'reportApi(' not in apply_values
+
+
+def test_report_recalculation_has_nonblocking_loading_and_concurrency_guard():
+    assert 'id="reportUpdateLoading"' in TEMPLATE
+    assert 'role="status" aria-live="polite" aria-atomic="true"' in TEMPLATE
+    assert '<strong>Atualizando relatório</strong>' in TEMPLATE
+    assert 'Processando os dados e recalculando os resultados...' in TEMPLATE
+    assert '.reportUpdateLoading{' in TEMPLATE
+    assert 'pointer-events:none' in TEMPLATE.split('.reportUpdateLoading{', 1)[1].split('}', 1)[0]
+    assert 'let REPORT_UPDATE_IN_PROGRESS=false' in TEMPLATE
+    assert 'if(REPORT_UPDATE_IN_PROGRESS)return false' in TEMPLATE
+    assert "document.querySelectorAll('[data-report-update-action]')" in TEMPLATE
+    assert "content.setAttribute('aria-busy','true')" in TEMPLATE
+    assert "content.removeAttribute('aria-busy')" in TEMPLATE
+    assert 'function failReportUpdate(error)' in TEMPLATE
+    assert 'Não foi possível atualizar o relatório.' in TEMPLATE
+    assert 'setInterval(' not in TEMPLATE
+
+    for function_name in (
+        'submitClassificationUpdate',
+        'saveReportBase',
+        'addComplementaryFiles',
+        'startReportBaseImport',
+    ):
+        function_body = TEMPLATE.split(f'async function {function_name}', 1)[1].split('\n', 1)[0]
+        assert 'beginReportUpdate(' in function_body
+        assert 'failReportUpdate(error)' in function_body
+
+    assert 'data-submit-class="${warningIndex}" data-report-update-action' in TEMPLATE
+    assert 'id="reportBaseSave" data-report-update-action' in TEMPLATE
+
+
+def test_report_initial_screen_scale_is_layout_based_responsive_and_print_safe():
+    assert 'id="reportViewport" class="reportViewport"' in TEMPLATE
+    assert ':root{--report-screen-scale:.9}' in TEMPLATE
+    assert '@media screen and (min-width:721px)' in TEMPLATE
+    assert 'transform:scale(var(--report-screen-scale))' in TEMPLATE
+    assert 'width:calc(100% / var(--report-screen-scale))' in TEMPLATE
+    assert 'overflow-x:clip' in TEMPLATE
+    assert '@media screen and (max-width:720px)' in TEMPLATE
+    assert '.reportViewport>.wrap{width:auto;transform:none}' in TEMPLATE
+    assert '.reportViewport{display:block!important;width:auto!important;height:auto!important;overflow:visible!important}' in TEMPLATE
+    assert '.reportViewport>.wrap{width:auto!important;max-width:none!important;transform:none!important}' in TEMPLATE
+    assert 'function scheduleReportScreenScale()' in TEMPLATE
+    assert "new ResizeObserver(scheduleReportScreenScale)" in TEMPLATE
+    assert "content.getBoundingClientRect().height" in TEMPLATE
+    assert "matchMedia('print').matches" in TEMPLATE
+    assert "blocks.reduce((sum,b)=>sum+b.offsetHeight,0)" in TEMPLATE
+    assert ".style.zoom" not in TEMPLATE
 
 
 def test_updated_reimportable_workbook_download_is_exposed():

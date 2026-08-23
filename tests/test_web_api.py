@@ -430,6 +430,46 @@ def test_imported_base_updates_site_backend_state_and_revalidation(tmp_path, mon
     assert restored.json()["revision"] == info["revision"]
 
 
+def test_manual_base_addition_and_removal_persist_for_later_session(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+    client = TestClient(main.app)
+    login(client)
+
+    original = client.get("/api/base").json()["items"]
+    added = {
+        "supplier_code": "CODEX-T2-99001",
+        "supplier": "FORNECEDOR MANUAL TAREFA 2",
+        "flow": "FLUXO MANUAL",
+        "category": "CATEGORIA MANUAL",
+    }
+    with_added = [*original, added]
+    response = client.put(
+        "/api/base",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"items": with_added},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["base"]["rows"] == len(with_added)
+
+    remove_code = original[0]["supplier_code"]
+    after_removal = [row for row in with_added if row["supplier_code"] != remove_code]
+    response = client.put(
+        "/api/base",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"items": after_removal},
+    )
+    assert response.status_code == 200, response.text
+
+    later = TestClient(main.app)
+    login(later)
+    restored = later.get("/api/base")
+    assert restored.status_code == 200
+    restored_items = restored.json()["items"]
+    assert any(row["supplier_code"] == added["supplier_code"] for row in restored_items)
+    assert all(row["supplier_code"] != remove_code for row in restored_items)
+    assert restored.json()["rows"] == len(after_removal)
+
+
 def test_append_base_requires_explicit_resolution_for_similar_rows(tmp_path, monkeypatch):
     import xlsxwriter
 

@@ -7,6 +7,7 @@
   <title>Contas a Pagar — Previsto x Realizado</title>
   <link rel="icon" href="/resources/contas_a_pagar_logo.png" />
   <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="/static/action_feedback.css" />
 </head>
 <body>
   <main class="app-shell">
@@ -105,16 +106,28 @@
         <button id="baseClose" type="button" class="icon-close" aria-label="Fechar">×</button>
       </div>
       <div class="modal-actions base-actions">
-        <a class="btn link-btn" href="/api/base/export">Exportar Base em Excel</a>
+        <a id="exportBaseBtn" class="btn link-btn" href="/api/base/export">Exportar Base em Excel</a>
         <button id="editBaseBtn" type="button" class="btn">Editar</button>
+        <button id="addBaseRowBtn" type="button" class="btn">Adicionar linha</button>
+        <button id="removeBaseRowsBtn" type="button" class="btn danger-btn" disabled>Remover selecionadas</button>
         <button id="saveBaseBtn" type="button" class="btn ready" hidden>Salvar alterações</button>
         <button id="cancelBaseEditBtn" type="button" class="btn" hidden>Cancelar edição</button>
         <button id="importBaseBtn" type="button" class="btn">Importar nova Base</button>
         <input id="baseFileInput" type="file" accept=".xlsx,.xls,.xlsm,.xlsb" hidden />
       </div>
+      <div class="base-table-toolbar">
+        <span id="baseTableStatus" aria-live="polite">0 registro(s)</span>
+        <div class="base-pagination">
+          <button id="basePreviousPage" type="button" class="btn compact" aria-label="Página anterior">Anterior</button>
+          <button id="baseNextPage" type="button" class="btn compact" aria-label="Próxima página">Próxima</button>
+        </div>
+      </div>
       <div class="base-table-wrap">
         <table class="base-table">
-          <thead><tr><th>Cód Fornecedor</th><th>Fornecedor</th><th>Fluxo JMM</th><th>Categoria</th></tr></thead>
+          <thead>
+            <tr><th class="base-select-head"><input id="baseSelectPage" type="checkbox" aria-label="Selecionar linhas desta página"></th><th>Cód Fornecedor</th><th>Fornecedor</th><th>Fluxo JMM</th><th>Categoria</th></tr>
+            <tr class="base-filter-row"><th></th><th><input data-base-column-filter="supplier_code" aria-label="Filtrar por Cód Fornecedor" placeholder="Filtrar código"></th><th><input data-base-column-filter="supplier" aria-label="Filtrar por Fornecedor" placeholder="Filtrar fornecedor"></th><th><input data-base-column-filter="flow" aria-label="Filtrar por Fluxo JMM" placeholder="Filtrar fluxo"></th><th><input data-base-column-filter="category" aria-label="Filtrar por Categoria" placeholder="Filtrar categoria"></th></tr>
+          </thead>
           <tbody id="baseTableBody"></tbody>
         </table>
       </div>
@@ -163,6 +176,8 @@
     </form>
   </dialog>
 
+  <script src="/static/action_feedback.js" defer></script>
+  <script src="/static/base_table_component.js" defer></script>
   <script src="/static/app.js" defer></script>
 </body>
 </html>

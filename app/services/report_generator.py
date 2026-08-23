@@ -41,8 +41,17 @@ def generate_report(result: ReconcileResult, output_dir: str | Path, source_name
     }
     template_path = Path(__file__).resolve().parent.parent / "report" / "report_template.html"
     html = template_path.read_text(encoding="utf-8")
+    base_component_path = Path(__file__).resolve().parents[2] / "webapp" / "static" / "base_table_component.js"
+    base_component = base_component_path.read_text(encoding="utf-8")
+    action_feedback_path = Path(__file__).resolve().parents[2] / "webapp" / "static" / "action_feedback.js"
+    action_feedback = action_feedback_path.read_text(encoding="utf-8")
+    action_feedback_styles_path = Path(__file__).resolve().parents[2] / "webapp" / "static" / "action_feedback.css"
+    action_feedback_styles = action_feedback_styles_path.read_text(encoding="utf-8")
     data_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     html = html.replace("__REPORT_DATA__", data_json.replace("</", "<\\/"))
+    html = html.replace("__ACTION_FEEDBACK_STYLES__", action_feedback_styles.replace("</", "<\\/"))
+    html = html.replace("__ACTION_FEEDBACK_COMPONENT__", action_feedback.replace("</", "<\\/"))
+    html = html.replace("__BASE_TABLE_COMPONENT__", base_component.replace("</", "<\\/"))
     output = out / "index.html"
     output.write_text(html, encoding="utf-8")
     return output

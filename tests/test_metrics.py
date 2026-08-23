@@ -45,6 +45,36 @@ def test_chart_aggregations_reconcile_to_totals():
     assert charts["timeline"][-1]["actual"] == s["actual"]
 
 
+def test_flow_contributions_preserve_positive_negative_and_close_values():
+    p = [
+        {"value": 100, "flow": "FLUXO A"},
+        {"value": 20, "flow": "FLUXO A"},
+        {"value": 200, "flow": "FLUXO B"},
+        {"value": 50, "flow": "FLUXO C"},
+        {"value": 100, "flow": "FLUXO E"},
+        {"value": 100, "flow": "FLUXO F"},
+    ]
+    r = [
+        {"value": 160, "flow": "FLUXO A"},
+        {"value": 150, "flow": "FLUXO B"},
+        {"value": 50, "flow": "FLUXO C"},
+        {"value": 25, "flow": "FLUXO D"},
+        {"value": 101, "flow": "FLUXO E"},
+        {"value": 99, "flow": "FLUXO F"},
+    ]
+
+    summary = summarize(p, r)
+    flows = {row["label"]: row for row in chart_data(p, r)["flows"]}
+
+    assert flows["FLUXO A"]["variance"] == 40
+    assert flows["FLUXO B"]["variance"] == -50
+    assert flows["FLUXO C"]["variance"] == 0
+    assert flows["FLUXO D"]["variance"] == 25
+    assert flows["FLUXO E"]["variance"] == 1
+    assert flows["FLUXO F"]["variance"] == -1
+    assert sum(row["variance"] for row in flows.values()) == summary["variance"]
+
+
 def test_monthly_supplier_category_reconciles_dated_values():
     p=[
         {"value":100,"supplier_key":"A","supplier":"Fornecedor A","category":"CAT 1","date":"2026-05-02"},
