@@ -4,7 +4,7 @@ import math
 from pathlib import Path
 from textwrap import wrap
 
-from reportlab.lib.colors import HexColor, white
+from reportlab.lib.colors import Color, HexColor, black, white
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
@@ -81,6 +81,14 @@ def _supplier_color(name: str):
     for ch in text:
         seed = (seed * 31 + ord(ch)) & 0xFFFFFFFF
     return PASTEL[seed % len(PASTEL)]
+
+
+def _mix_color(color, target, ratio: float):
+    return Color(
+        color.red * (1 - ratio) + target.red * ratio,
+        color.green * (1 - ratio) + target.green * ratio,
+        color.blue * (1 - ratio) + target.blue * ratio,
+    )
 
 
 def _text(c: canvas.Canvas, x: float, y: float, text: str, size: float = 9, color=TEXT, bold=False):
@@ -208,25 +216,26 @@ def _category_chart(c, x, y, w, h, rows):
     zero_x = xx(0.0)
 
     def value_bubble(endpoint: float, cy: float, label: str, positive: bool) -> None:
-        font_size = 7.1
-        bubble_w = min(96, max(58, pdfmetrics.stringWidth(label, "Helvetica-Bold", font_size) + 12))
+        font_size = 7.6
+        bubble_w = min(98, max(60, pdfmetrics.stringWidth(label, "Helvetica-Bold", font_size) + 13))
         desired = endpoint + 4 if positive else endpoint - bubble_w - 4
         bx = max(left + 2, min(x + w - bubble_w - 2, desired))
         c.setFillColor(white)
         c.setStrokeColor(HexColor("#69818F"))
         c.setLineWidth(.55)
-        c.roundRect(bx, cy - 6.5, bubble_w, 13, 3.5, fill=1, stroke=1)
+        c.roundRect(bx, cy - 6.75, bubble_w, 13.5, 3.5, fill=1, stroke=1)
         c.setFont("Helvetica-Bold", font_size)
         c.setFillColor(TEXT)
-        c.drawCentredString(bx + bubble_w / 2, cy - 2.5, label)
+        c.drawCentredString(bx + bubble_w / 2, cy - 2.65, label)
 
-    c.setFillColor(HexColor("#F7FAFC"))
-    c.setStrokeColor(ACCENT)
-    c.setLineWidth(1.2)
+    c.setFillColor(HexColor("#B9DCED"))
+    c.setStrokeColor(HexColor("#315F78"))
+    c.setLineWidth(2.0)
     c.roundRect(x + w - 208, y + h - 17, 14, 9, 2, fill=1, stroke=1)
     _text(c, x + w - 189, y + h - 16, "P = Previsto", 7, MUTED, True)
-    c.setFillColor(ACCENT)
-    c.setStrokeColor(ACCENT)
+    c.setFillColor(HexColor("#74ABC7"))
+    c.setStrokeColor(HexColor("#315F78"))
+    c.setLineWidth(.8)
     c.roundRect(x + w - 98, y + h - 17, 14, 9, 2, fill=1, stroke=1)
     _text(c, x + w - 79, y + h - 16, "R = Realizado", 7, MUTED, True)
 
@@ -253,10 +262,13 @@ def _category_chart(c, x, y, w, h, rows):
             endpoint = xx(value)
             bar_x = min(zero_x, endpoint)
             bar_w = max(1.0, abs(endpoint - zero_x))
-            filled = item["mark"] == "R"
-            c.setFillColor(color if filled else HexColor("#F7FAFC"))
-            c.setStrokeColor(color)
-            c.setLineWidth(1.35 if filled else 1.8)
+            planned = item["mark"] == "P"
+            previous = bool(item["previous"])
+            fill_color = _mix_color(color, white, (.58 if previous else .45) if planned else (.24 if previous else .10))
+            stroke_color = _mix_color(color, black, .52 if planned else .30)
+            c.setFillColor(fill_color)
+            c.setStrokeColor(stroke_color)
+            c.setLineWidth(2.0 if planned else .85)
             c.setDash(4, 2) if item["previous"] else c.setDash()
             c.roundRect(bar_x, cy - 4.2, bar_w, 8.4, 2.6, fill=1, stroke=1)
             c.setDash()
@@ -370,6 +382,95 @@ def _lollipop(c, x, y, w, h, rows):
         c.setFont("Helvetica-Bold", 5.6)
         c.setFillColor(color)
         c.drawRightString(x + w, yy - 2, label)
+
+
+def _monthly_comparison_rows(previsto, realizado):
+    totals: dict[str, dict[str, float]] = {}
+    for side, items in (("planned", previsto), ("actual", realizado)):
+        for item in items:
+            month = str(item.get("date") or "")[:7]
+            if len(month) != 7:
+                continue
+            bucket = totals.setdefault(month, {"planned": 0.0, "actual": 0.0})
+            bucket[side] += float(item["value"])
+    return [
+        {"month": month, **totals[month]}
+        for month in sorted(totals)
+    ]
+
+
+def _monthly_comparison_chart(c, x, y, w, h, rows):
+    if not rows:
+        _text(c, x, y + h / 2, "Sem dados mensais", 10, MUTED)
+        return
+    values = [float(row[key]) for row in rows for key in ("planned", "actual")]
+    domain_min = min(0.0, *values)
+    domain_max = max(0.0, *values)
+    span = domain_max - domain_min or 1.0
+    left, right = x + 46, x + w - 8
+    # Reserva uma faixa superior exclusiva para a legenda; os balões monetários
+    # ficam acima das colunas, mas nunca alcançam essa faixa.
+    bottom, top = y + 31, y + h - 58
+    plot_w, plot_h = right - left, top - bottom
+
+    def yy(value: float) -> float:
+        return bottom + (value - domain_min) / span * plot_h
+
+    zero_y = yy(0.0)
+    for index in range(5):
+        value = domain_min + span * index / 4
+        tick_y = yy(value)
+        c.setStrokeColor(LINE)
+        c.setLineWidth(.6)
+        c.line(left, tick_y, right, tick_y)
+        _text(c, x, tick_y - 2, short_brl(value), 5.5, MUTED)
+
+    slot = plot_w / len(rows)
+    bar_w = min(18.0, max(5.0, slot * .25))
+    for index, row in enumerate(rows):
+        center = left + slot * (index + .5)
+        value_labels = []
+        for series_index, (key, fill, stroke) in enumerate((
+            ("planned", HexColor("#B8DCED"), HexColor("#315F78")),
+            ("actual", HexColor("#E6A58F"), HexColor("#8D4E3B")),
+        )):
+            value = float(row[key])
+            value_y = yy(value)
+            bar_x = center + (-bar_w - 2 if series_index == 0 else 2)
+            bar_y = min(zero_y, value_y)
+            bar_h = max(1.0, abs(zero_y - value_y))
+            c.setFillColor(fill)
+            c.setStrokeColor(stroke)
+            c.setLineWidth(1.2 if series_index == 0 else .7)
+            c.roundRect(bar_x, bar_y, bar_w, bar_h, 2, fill=1, stroke=1)
+            label = brl(value)
+            font_size = 6.2
+            label_w = min(72, max(48, pdfmetrics.stringWidth(label, "Helvetica-Bold", font_size) + 8))
+            preferred = bar_y + bar_h + 5 + series_index * 15 if value >= 0 else bar_y - 14 - series_index * 15
+            label_y = max(y + 2, min(top + 7, preferred))
+            value_labels.append((label, label_w, label_y, stroke, font_size))
+        # As duas colunas precisam existir antes dos balões; assim nenhuma
+        # coluna posterior encobre o rótulo da série anterior.
+        for label, label_w, label_y, stroke, font_size in value_labels:
+            c.setFillColor(white)
+            c.setStrokeColor(stroke)
+            c.setLineWidth(.45)
+            c.roundRect(center - label_w / 2, label_y, label_w, 12, 3, fill=1, stroke=1)
+            c.setFillColor(TEXT)
+            c.setFont("Helvetica-Bold", font_size)
+            c.drawCentredString(center, label_y + 3.6, label)
+        month = str(row["month"])
+        label = f"{MONTHS_PT[int(month[5:7]) - 1]}/{month[2:4]}"
+        _text(c, center - 11, y + 10, label, 6.2, MUTED, True)
+
+    c.setFillColor(HexColor("#B8DCED"))
+    c.setStrokeColor(HexColor("#315F78"))
+    c.roundRect(x + w - 158, y + h - 14, 12, 8, 2, fill=1, stroke=1)
+    _text(c, x + w - 142, y + h - 13, "Previsto", 6.2, MUTED, True)
+    c.setFillColor(HexColor("#E6A58F"))
+    c.setStrokeColor(HexColor("#8D4E3B"))
+    c.roundRect(x + w - 82, y + h - 14, 12, 8, 2, fill=1, stroke=1)
+    _text(c, x + w - 66, y + h - 13, "Realizado", 6.2, MUTED, True)
 
 
 def _waterfall(c, x, y, w, h, rows, start):
@@ -718,13 +819,25 @@ def generate_pdf(result: ReconcileResult, destination: str | Path) -> Path:
         monthly_rows, font_size=5.35, leading=6.2,
     )
 
+    monthly_comparison = _monthly_comparison_rows(result.previsto, result.realizado)
+    # Seis meses por página preservam espaço horizontal suficiente para os dois
+    # balões monetários de cada mês sem ocultar qualquer valor no PDF.
+    monthly_chunks = [monthly_comparison[index:index + 6] for index in range(0, len(monthly_comparison), 6)] or [[]]
     page += 1
-    w, h = _new_page(c, "Desvios financeiros", result.period_label, page)
+    w, h = _new_page(c, "Comparações financeiras", result.period_label, page)
     _text(c, 36, h - 98, "3. Maiores desvios por fornecedor", 10, BLUE, True)
     _lollipop(c, 36, h - 365, w - 72, 240, suppliers)
-    _text(c, 36, h - 405, "4. Contribuição para o desvio por Fluxo JMM", 10, BLUE, True)
-    _waterfall(c, 36, h - 720, w - 72, 275, charts["flows"], metrics["planned"])
+    _text(c, 36, h - 405, "4. Previsto x Realizado por mês", 10, BLUE, True)
+    _text(c, 36, h - 418, "Todos os meses disponíveis; valores exatos visíveis para Previsto e Realizado.", 6.2, MUTED)
+    _monthly_comparison_chart(c, 36, h - 720, w - 72, 280, monthly_chunks[0])
     c.showPage()
+
+    for chunk_index, chunk in enumerate(monthly_chunks[1:], start=2):
+        page += 1
+        w, h = _new_page(c, "Previsto x Realizado por mês", result.period_label, page)
+        _text(c, 36, h - 98, f"4. Previsto x Realizado por mês ({chunk_index}/{len(monthly_chunks)})", 10, BLUE, True)
+        _monthly_comparison_chart(c, 36, 70, w - 72, h - 190, chunk)
+        c.showPage()
 
     supplier_rows = [[
         row.get("supplier") or "Sem fornecedor",

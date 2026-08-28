@@ -8,7 +8,7 @@ import pytest
 from app.services.excel_export import export_report_workbooks
 from app.services.excel_reader import TableData, WorkbookData, read_excel
 from app.services.normalizer import ValueParseError, to_float
-from app.services.pdf_report import _category_month_rows
+from app.services.pdf_report import _category_month_rows, _monthly_comparison_rows
 from app.services.reconciler import ReconcileResult, reconcile
 from app.services.sheet_detector import _consolidated_value_columns, detect_base_table, detect_input_tables
 from webapp.engine import WebEngine
@@ -161,6 +161,23 @@ def test_pdf_category_rows_keep_one_or_two_real_months_and_all_four_series():
     assert months == ["JUN/26", "JUL/26"]
     assert [item["label"] for item in rows[0]["series"]] == ["JUN/26 P", "JUN/26 R", "JUL/26 P", "JUL/26 R"]
     assert [item["value"] for item in rows[0]["series"]] == [20.0, 12.0, 30.0, 18.0]
+
+
+def test_pdf_monthly_comparison_keeps_every_month_and_signed_total():
+    previsto = [
+        {"date": "2026-01-01", "value": 10.0},
+        {"date": "2026-01-15", "value": 5.0},
+        {"date": "2026-03-01", "value": -2.0},
+    ]
+    realizado = [
+        {"date": "2026-02-01", "value": 20.0},
+        {"date": "2026-03-01", "value": 7.0},
+    ]
+    assert _monthly_comparison_rows(previsto, realizado) == [
+        {"month": "2026-01", "planned": 15.0, "actual": 0.0},
+        {"month": "2026-02", "planned": 0.0, "actual": 20.0},
+        {"month": "2026-03", "planned": -2.0, "actual": 7.0},
+    ]
 
 
 def test_conflicting_temporary_complement_is_unclassified_end_to_end():

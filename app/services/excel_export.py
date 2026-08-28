@@ -16,6 +16,23 @@ MONEY_FMT = {"num_format": 'R$ #,##0.00;[Red]-R$ #,##0.00'}
 PCT_FMT = {"num_format": '0.00%;[Red]-0.00%'}
 DATE_FMT = {"num_format": 'dd/mm/yyyy'}
 
+PREVISTO_EXPORT_COLUMNS = [
+    ("source_file", "Arquivo origem"), ("source_sheet", "Aba"), ("source_row", "Linha"),
+    ("title", "Título previsto"), ("supplier_code", "Cód Fornecedor"), ("supplier_source", "Fornecedor original"),
+    ("supplier", "Fornecedor classificado"), ("date", "Data prevista"), ("value", "Valor previsto"),
+    ("flow", "Fluxo JMM"), ("category", "Categoria"), ("match", "Regra classificação"),
+]
+
+REALIZADO_EXPORT_COLUMNS = [
+    ("source_file", "Arquivo origem"), ("source_sheet", "Aba"), ("source_row", "Linha"),
+    ("title", "Título"), ("supplier_code", "Cód Fornecedor"), ("supplier_source", "Fornecedor original"),
+    ("supplier", "Fornecedor classificado"), ("date", "Último pagamento"), ("due_date", "Vencimento"),
+    ("value", "Vlr.Original"), ("flow", "Fluxo JMM"), ("category", "Categoria"),
+    ("punctuality", "Pontualidade"), ("company", "Empresa"), ("branch", "Filial"),
+    ("account", "Conta contábil"), ("financial_account", "Conta financeira"), ("cost_center", "Centro de custo"),
+    ("match", "Regra classificação"),
+]
+
 
 def _required_number(value: Any, field: str) -> float:
     if value is None or (isinstance(value, str) and not value.strip()) or isinstance(value, bool):
@@ -130,28 +147,33 @@ def _write_updated_report_workbook(path: Path, result: ReconcileResult) -> None:
     wb.close()
 
 
+def export_filtered_report_workbook(result: ReconcileResult, output_dir: Path, kind: str) -> Path:
+    """Materializa somente o conjunto já filtrado pelo backend da sessão."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if kind == "previsto":
+        path = output_dir / "Previsto_filtrado.xlsx"
+        _write_xlsx(path, "PREVISTO", PREVISTO_EXPORT_COLUMNS, result.previsto, required_money_keys={"value"})
+        return path
+    if kind == "realizado":
+        path = output_dir / "Realizado_filtrado.xlsx"
+        _write_xlsx(path, "REALIZADO", REALIZADO_EXPORT_COLUMNS, result.realizado, required_money_keys={"value"})
+        return path
+    if kind == "atualizado":
+        path = output_dir / "Relatorio_atualizado_filtrado.xlsx"
+        _write_updated_report_workbook(path, result)
+        return path
+    raise ValueError("Tipo de exportação inválido.")
+
+
 def export_report_workbooks(result: ReconcileResult, output_dir: Path) -> dict[str, str]:
     exports = output_dir / "excel"
     exports.mkdir(parents=True, exist_ok=True)
 
     p_path = exports / "Previsto_normalizado.xlsx"
-    _write_xlsx(p_path, "PREVISTO", [
-        ("source_file", "Arquivo origem"), ("source_sheet", "Aba"), ("source_row", "Linha"),
-        ("title", "Título previsto"), ("supplier_code", "Cód Fornecedor"), ("supplier_source", "Fornecedor original"),
-        ("supplier", "Fornecedor classificado"), ("date", "Data prevista"), ("value", "Valor previsto"),
-        ("flow", "Fluxo JMM"), ("category", "Categoria"), ("match", "Regra classificação"),
-    ], result.previsto, required_money_keys={"value"})
+    _write_xlsx(p_path, "PREVISTO", PREVISTO_EXPORT_COLUMNS, result.previsto, required_money_keys={"value"})
 
     r_path = exports / "Realizado_normalizado.xlsx"
-    _write_xlsx(r_path, "REALIZADO", [
-        ("source_file", "Arquivo origem"), ("source_sheet", "Aba"), ("source_row", "Linha"),
-        ("title", "Título"), ("supplier_code", "Cód Fornecedor"), ("supplier_source", "Fornecedor original"),
-        ("supplier", "Fornecedor classificado"), ("date", "Último pagamento"), ("due_date", "Vencimento"),
-        ("value", "Vlr.Original"), ("flow", "Fluxo JMM"), ("category", "Categoria"),
-        ("punctuality", "Pontualidade"), ("company", "Empresa"), ("branch", "Filial"),
-        ("account", "Conta contábil"), ("financial_account", "Conta financeira"), ("cost_center", "Centro de custo"),
-        ("match", "Regra classificação"),
-    ], result.realizado, required_money_keys={"value"})
+    _write_xlsx(r_path, "REALIZADO", REALIZADO_EXPORT_COLUMNS, result.realizado, required_money_keys={"value"})
 
     s_path = exports / "Analise_por_fornecedor.xlsx"
     _write_xlsx(s_path, "FORNECEDORES", [

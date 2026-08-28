@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from app.services.base_manager import _write_base_xlsx
+from app.services.excel_export import export_filtered_report_workbook
 from app.services.excel_reader import TableData, WorkbookData, read_excel
 from app.services.normalizer import find_column
 from app.services.reconciler import ReconcileResult, normalize_supplier_code, reconcile, validate_base
@@ -298,6 +299,63 @@ class WebEngine:
         dest = work / "BASE_DADOS.xlsx"
         _write_base_xlsx(table, dest)
         return dest
+
+    @staticmethod
+    def filter_report_result(result: ReconcileResult, filters: dict[str, Any]) -> ReconcileResult:
+        """Reaplica no backend somente filtros declarativos, nunca linhas financeiras do navegador."""
+        selected = {
+            key: {str(value) for value in filters.get(key, []) if str(value)}
+            for key in ("category", "flow", "supplier", "emission")
+        }
+        emission_mode = "date" if filters.get("emission_mode") == "date" else "month"
+        search_terms = [
+            term.strip().lower()
+            for term in str(filters.get("search") or "").split(",")
+            if term.strip()
+        ]
+
+        def keep(row: dict[str, Any]) -> bool:
+            for field in ("category", "flow", "supplier"):
+                if selected[field] and str(row.get(field) or "") not in selected[field]:
+                    return False
+            if selected["emission"]:
+                raw_date = str(row.get("date") or "")
+                emission_key = raw_date[:10] if emission_mode == "date" else raw_date[:7]
+                if emission_key not in selected["emission"]:
+                    return False
+            if search_terms:
+                haystack = " ".join(str(row.get(key) or "") for key in ("supplier", "supplier_source", "title")).lower()
+                if not any(term in haystack for term in search_terms):
+                    return False
+            return True
+
+        return ReconcileResult(
+            previsto=[row for row in result.previsto if keep(row)],
+            realizado=[row for row in result.realizado if keep(row)],
+            warnings=list(result.warnings),
+            period_label=result.period_label,
+            period_year=result.period_year,
+            period_month=result.period_month,
+            base_rows=result.base_rows,
+        )
+
+    def export_filtered_report(self, sid: str, filters: dict[str, Any], kind: str) -> tuple[Path, dict[str, Any]]:
+        validated = self.store.state(sid).validated
+        if validated is None:
+            raise RuntimeError("O relatório precisa estar atualizado antes da exportação.")
+        filtered = self.filter_report_result(validated.result, filters)
+        work = self.store.new_work_dir(sid, "filtered_export")
+        try:
+            path = export_filtered_report_workbook(filtered, work, kind)
+        except Exception:
+            shutil.rmtree(work, ignore_errors=True)
+            raise
+        return path, {
+            "previsto_records": len(filtered.previsto),
+            "previsto_total": sum(float(row["value"]) for row in filtered.previsto),
+            "realizado_records": len(filtered.realizado),
+            "realizado_total": sum(float(row["value"]) for row in filtered.realizado),
+        }
 
     @staticmethod
     def _code_key(value: Any) -> str:

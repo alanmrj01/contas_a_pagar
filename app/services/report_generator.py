@@ -4,7 +4,6 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from .excel_export import export_report_workbooks
 from .metrics import chart_data, summarize
 from .pdf_report import generate_pdf
 from .reconciler import ReconcileResult
@@ -14,7 +13,6 @@ def generate_report(result: ReconcileResult, output_dir: str | Path, source_name
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     metrics = summarize(result.previsto, result.realizado)
-    exports = export_report_workbooks(result, out)
     pdf_path = generate_pdf(result, out / "Relatorio_Contas_a_Pagar.pdf")
     if isinstance(source_names, str):
         source_names = [source_names]
@@ -28,7 +26,7 @@ def generate_report(result: ReconcileResult, output_dir: str | Path, source_name
         "charts": chart_data(result.previsto, result.realizado),
         "previsto": result.previsto,
         "realizado": result.realizado,
-        "downloads": {**exports, "pdf": pdf_path.name},
+        "downloads": {"pdf": pdf_path.name},
         "calculationInfo": {
             "planned": "Soma do PREVISTO após validação. No layout padrão, o cálculo usa o campo exato 'Valor previsto'. No layout consolidado, usa o campo exato 'Previsto' somente nas linhas em que o campo exato 'Situação FC' é 'Previsto'. Nenhuma linha é deduplicada automaticamente.",
             "actual": "Soma do REALIZADO após validação. No layout padrão, o cálculo usa o campo exato 'Vlr.Original' (Valor Original). No layout consolidado, usa o valor absoluto do campo exato 'Realizado' somente nas linhas em que o campo exato 'Situação FC' é 'Realizado'. Nenhuma linha é deduplicada automaticamente.",

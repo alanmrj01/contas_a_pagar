@@ -414,6 +414,33 @@ class SessionStore:
         finally:
             shutil.rmtree(source_dir, ignore_errors=True)
 
+    def put_report_artifact(self, key: str, source: Path, logical_name: str, download_name: str) -> SealedArtifact:
+        """Acrescenta ou substitui um artefato cifrado sem invalidar o relatório atual."""
+        state = self.state(key)
+        logical = PurePosixPath(logical_name)
+        if logical.is_absolute() or ".." in logical.parts:
+            raise ValueError("Nome lógico de artefato inválido.")
+        if state.report_artifact_root is None:
+            raise RuntimeError("Gere o relatório antes de exportar os dados filtrados.")
+        logical_text = logical.as_posix()
+        target = state.report_artifact_root / f"{logical_text}.capenc"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_name(target.name + ".new")
+        try:
+            size = seal_file(source, temporary, bytes(state.artifact_key), logical_text)
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+        artifact = SealedArtifact(
+            logical_name=logical_text,
+            sealed_path=target,
+            content_type=mimetypes.guess_type(download_name)[0] or "application/octet-stream",
+            download_name=PurePosixPath(download_name).name,
+            plain_size=size,
+        )
+        state.report_artifacts[logical_text] = artifact
+        return artifact
+
     def report_artifact(self, key: str, logical_name: str) -> SealedArtifact:
         logical = PurePosixPath(logical_name)
         if logical.is_absolute() or ".." in logical.parts:

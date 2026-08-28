@@ -412,6 +412,77 @@ def test_http_flow_encrypted_upload_validate_generate_and_private_downloads(tmp_
     assert not list(session_dirs[0].rglob("*.pdf"))
 
 
+def test_filtered_report_exports_are_reapplied_server_side_and_kept_private(tmp_path, monkeypatch):
+    from app.services.excel_reader import read_excel
+    from app.services.sheet_detector import detect_input_tables
+    from webapp.engine import WebEngine
+
+    main = load_main(tmp_path, monkeypatch)
+    owner = TestClient(main.app)
+    stranger = TestClient(main.app)
+    login(owner)
+    login(stranger)
+    sample = ROOT / "samples" / "PLANILHAS PAGAR E PREVISTO.xlsx"
+    upload_id = stage_file(owner, sample)
+    validated = owner.post(
+        "/api/validate",
+        headers={"X-CSRF-Token": csrf(owner)},
+        json={"upload_ids": [upload_id]},
+    )
+    assert validated.status_code == 200, validated.text
+    generated = owner.post("/api/generate", headers={"X-CSRF-Token": csrf(owner)})
+    assert generated.status_code == 200, generated.text
+
+    state = next(state for state in main.store._states.values() if state.validated is not None)
+    result = state.validated.result
+    chosen_category = next(
+        category
+        for category in sorted({str(row.get("category") or "") for row in [*result.previsto, *result.realizado]})
+        if category
+    )
+    filters = {"category": [chosen_category], "search": ""}
+    expected = WebEngine.filter_report_result(result, filters)
+
+    assert owner.post(
+        "/api/report/export",
+        json={"kind": "previsto", "filters": filters},
+    ).status_code == 403
+
+    exported = {}
+    for kind in ("previsto", "realizado", "atualizado"):
+        response = owner.post(
+            "/api/report/export",
+            headers={"X-CSRF-Token": csrf(owner)},
+            json={"kind": kind, "filters": filters},
+        )
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["previsto_records"] == len(expected.previsto)
+        assert payload["realizado_records"] == len(expected.realizado)
+        assert round(payload["previsto_total"], 2) == round(sum(float(row["value"]) for row in expected.previsto), 2)
+        assert round(payload["realizado_total"], 2) == round(sum(float(row["value"]) for row in expected.realizado), 2)
+        assert stranger.get(payload["url"]).status_code == 404
+        download = owner.get(payload["url"])
+        assert download.status_code == 200
+        path = tmp_path / payload["filename"]
+        path.write_bytes(download.content)
+        exported[kind] = path
+
+    previsto_rows = read_excel(exported["previsto"]).tables[0].rows
+    realizado_rows = read_excel(exported["realizado"]).tables[0].rows
+    assert len(previsto_rows) == len(expected.previsto)
+    assert len(realizado_rows) == len(expected.realizado)
+    assert round(sum(float(row["Valor previsto"]) for row in previsto_rows), 2) == round(sum(float(row["value"]) for row in expected.previsto), 2)
+    assert round(sum(float(row["Vlr.Original"]) for row in realizado_rows), 2) == round(sum(float(row["value"]) for row in expected.realizado), 2)
+    detection = detect_input_tables([read_excel(exported["atualizado"])])
+    assert len(detection.previsto.rows) == len(expected.previsto)
+    assert len(detection.realizado.rows) == len(expected.realizado)
+
+    sealed_exports = list(state.report_artifact_root.rglob("exports/*.capenc"))
+    assert len(sealed_exports) == 3
+    assert all(path.read_bytes().startswith(b"CAPART01") for path in sealed_exports)
+
+
 def test_second_browser_cannot_open_first_browser_report(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
     owner = TestClient(main.app)
@@ -561,6 +632,32 @@ def test_imported_base_updates_site_backend_state_and_revalidation(tmp_path, mon
     assert restored.json()["revision"] == info["revision"]
 
 
+def test_invalid_base_import_preserves_the_previous_effective_state(tmp_path, monkeypatch):
+    import xlsxwriter
+
+    main = load_main(tmp_path, monkeypatch)
+    client = TestClient(main.app)
+    login(client)
+    before = client.get("/api/base").json()
+    invalid_path = tmp_path / "base_invalida_sem_categoria.xlsx"
+    workbook = xlsxwriter.Workbook(invalid_path)
+    sheet = workbook.add_worksheet("BASE DADOS")
+    sheet.write_row(0, 0, ["Cód Fornecedor", "Fornecedor", "Fluxo JMM"])
+    sheet.write_row(1, 0, ["INV-1", "FORNECEDOR INVÁLIDO", "FLUXO INVÁLIDO"])
+    workbook.close()
+    upload_id = stage_file(client, invalid_path, purpose="base")
+    imported = client.post(
+        "/api/base/import",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"upload_id": upload_id, "mode": "replace"},
+    )
+    assert imported.status_code == 400
+    assert "base anterior foi preservada" in imported.json()["detail"].lower()
+    after = client.get("/api/base").json()
+    assert after["revision"] == before["revision"]
+    assert after["items"] == before["items"]
+
+
 def test_manual_base_addition_and_removal_persist_for_later_session(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
     client = TestClient(main.app)
@@ -599,6 +696,87 @@ def test_manual_base_addition_and_removal_persist_for_later_session(tmp_path, mo
     assert any(row["supplier_code"] == added["supplier_code"] for row in restored_items)
     assert all(row["supplier_code"] != remove_code for row in restored_items)
     assert restored.json()["rows"] == len(after_removal)
+
+
+def test_initial_and_report_base_edits_share_the_same_effective_base_through_exports(tmp_path, monkeypatch):
+    import xlsxwriter
+
+    from app.services.excel_reader import read_excel
+    from app.services.sheet_detector import detect_base_table, detect_input_tables
+
+    main = load_main(tmp_path, monkeypatch)
+    client = TestClient(main.app)
+    login(client)
+    base_items = [
+        {"supplier_code": "777", "supplier": "FORNECEDOR AUDITADO", "flow": "FLUXO INICIAL", "category": "CATEGORIA INICIAL"},
+        {"supplier_code": "888", "supplier": "FORNECEDOR DE OPÇÕES", "flow": "FLUXO EDITADO", "category": "CATEGORIA EDITADA"},
+    ]
+    updated = client.put(
+        "/api/base",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"items": base_items},
+    )
+    assert updated.status_code == 200, updated.text
+
+    financial_path = tmp_path / "f.xlsx"
+    workbook = xlsxwriter.Workbook(financial_path)
+    planned = workbook.add_worksheet("PREVISTO")
+    planned.write_row(0, 0, ["Título Previsto", "Cód Fornecedor", "Fornecedor", "Data prevista", "Valor previsto"])
+    planned.write_row(1, 0, ["P-777", "777", "FORNECEDOR AUDITADO", "01/07/2026", 125.50])
+    actual = workbook.add_worksheet("REALIZADO")
+    actual.write_row(0, 0, ["Título", "Fornecedor", "Nome Fornecedor", "Vlr.Original", "Ult. Pgto.", "Vencimento"])
+    actual.write_row(1, 0, ["R-777", "777", "FORNECEDOR AUDITADO", 90.25, "02/07/2026", "03/07/2026"])
+    workbook.close()
+    upload_id = stage_file(client, financial_path)
+    validation = client.post(
+        "/api/validate",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"upload_ids": [upload_id]},
+    )
+    assert validation.status_code == 200, validation.text
+    state = next(state for state in main.store._states.values() if state.validated is not None)
+    assert {row["flow"] for row in [*state.validated.result.previsto, *state.validated.result.realizado]} == {"FLUXO INICIAL"}
+    assert {row["category"] for row in [*state.validated.result.previsto, *state.validated.result.realizado]} == {"CATEGORIA INICIAL"}
+    generated = client.post("/api/generate", headers={"X-CSRF-Token": csrf(client)})
+    assert generated.status_code == 200, generated.text
+
+    classified = client.post(
+        "/api/base/classifications",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"assignments": [{
+            "supplier_code": "777",
+            "supplier": "FORNECEDOR AUDITADO",
+            "flow": "FLUXO EDITADO",
+            "category": "CATEGORIA EDITADA",
+        }]},
+    )
+    assert classified.status_code == 200, classified.text
+    current = client.get("/api/base").json()
+    audited = next(row for row in current["items"] if row["supplier_code"] == "777")
+    assert (audited["flow"], audited["category"]) == ("FLUXO EDITADO", "CATEGORIA EDITADA")
+    assert {row["flow"] for row in [*state.validated.result.previsto, *state.validated.result.realizado]} == {"FLUXO EDITADO"}
+    assert {row["category"] for row in [*state.validated.result.previsto, *state.validated.result.realizado]} == {"CATEGORIA EDITADA"}
+
+    base_download = client.get("/api/base/export")
+    assert base_download.status_code == 200
+    exported_base = tmp_path / "base_apos_relatorio.xlsx"
+    exported_base.write_bytes(base_download.content)
+    exported_base_rows = detect_base_table(read_excel(exported_base)).rows
+    assert any(row["Cód Fornecedor"] == "777" and row["Fluxo JMM"] == "FLUXO EDITADO" and row["Categoria"] == "CATEGORIA EDITADA" for row in exported_base_rows)
+
+    filtered = client.post(
+        "/api/report/export",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"kind": "atualizado", "filters": {"supplier": ["FORNECEDOR AUDITADO"]}},
+    )
+    assert filtered.status_code == 200, filtered.text
+    workbook_download = client.get(filtered.json()["url"])
+    updated_report = tmp_path / "relatorio_atualizado_base_efetiva.xlsx"
+    updated_report.write_bytes(workbook_download.content)
+    detection = detect_input_tables([read_excel(updated_report)])
+    all_rows = [*detection.previsto.rows, *detection.realizado.rows]
+    assert len(all_rows) == 2
+    assert all(row["Fluxo JMM"] == "FLUXO EDITADO" and row["Categoria"] == "CATEGORIA EDITADA" for row in all_rows)
 
 
 def test_append_base_requires_explicit_resolution_for_similar_rows(tmp_path, monkeypatch):

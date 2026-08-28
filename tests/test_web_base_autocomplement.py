@@ -39,6 +39,8 @@ def test_complementa_apenas_fornecedor_ausente_sem_sobrescrever_base():
     augmented, info = WebEngine._supplement_base_from_imported_workbooks(base, imported)
 
     validate_base(augmented)
+    assert len(base.rows) == 1
+    assert base.rows[0]["Fluxo JMM"] == "Fluxo A"
     assert len(augmented.rows) == 2
     assert augmented.rows[0]["Fornecedor"] == "Fornecedor Base"
     assert augmented.rows[0]["Fluxo JMM"] == "Fluxo A"

@@ -11,7 +11,7 @@ import shutil
 import time
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.gzip import GZipMiddleware
@@ -282,6 +282,23 @@ class BaseImportRequest(BaseModel):
 
 class ReportRefreshRequest(BaseModel):
     upload_ids: list[str] = Field(default_factory=list, max_length=200)
+
+
+ReportFilterValue = Annotated[str, Field(max_length=500)]
+
+
+class ReportFilterState(BaseModel):
+    category: list[ReportFilterValue] = Field(default_factory=list, max_length=2_000)
+    flow: list[ReportFilterValue] = Field(default_factory=list, max_length=2_000)
+    supplier: list[ReportFilterValue] = Field(default_factory=list, max_length=20_000)
+    emission_mode: Literal["month", "date"] = "month"
+    emission: list[ReportFilterValue] = Field(default_factory=list, max_length=5_000)
+    search: str = Field(default="", max_length=2_000)
+
+
+class ReportExportRequest(BaseModel):
+    kind: Literal["previsto", "realizado", "atualizado"]
+    filters: ReportFilterState = Field(default_factory=ReportFilterState)
 
 
 class ClassificationAssignment(BaseRowPayload):
@@ -705,6 +722,40 @@ async def api_report_refresh(request: Request, payload: ReportRefreshRequest):
         return await _rebuild_report(_sid(request), payload.upload_ids)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=_safe_error(exc)) from exc
+
+
+@app.post("/api/report/export")
+async def api_report_export(request: Request, payload: ReportExportRequest):
+    sid = _sid(request)
+    path: Path | None = None
+    filenames = {
+        "previsto": "Previsto_filtrado.xlsx",
+        "realizado": "Realizado_filtrado.xlsx",
+        "atualizado": "Relatorio_atualizado_filtrado.xlsx",
+    }
+    try:
+        async with heavy_jobs:
+            with store.lock(sid):
+                path, stats = await asyncio.to_thread(
+                    engine.export_filtered_report,
+                    sid,
+                    payload.filters.model_dump(),
+                    payload.kind,
+                )
+                filename = filenames[payload.kind]
+                logical_name = f"exports/{filename}"
+                await asyncio.to_thread(store.put_report_artifact, sid, path, logical_name, filename)
+        return {
+            "ok": True,
+            "url": f"/report/{logical_name}?v={int(time.time())}",
+            "filename": filename,
+            **stats,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=_safe_error(exc)) from exc
+    finally:
+        if path is not None:
+            shutil.rmtree(path.parent, ignore_errors=True)
 
 
 @app.get("/report/current")

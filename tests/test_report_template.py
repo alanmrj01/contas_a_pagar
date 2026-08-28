@@ -59,6 +59,7 @@ def test_lists_are_complete_in_html_and_static_pdf_is_paginated():
     assert 'todos os valores exatos aparecem em rótulos de alto contraste' in PDF_SOURCE
     assert 'value_bubble' in PDF_SOURCE
     assert 'def _category_month_rows(' in PDF_SOURCE
+    assert 'monthly_comparison[index:index + 6]' in PDF_SOURCE
 
 
 def test_avisos_are_excluded_from_both_pdf_paths():
@@ -210,12 +211,18 @@ def test_category_chart_is_horizontal_keeps_every_value_label_and_has_own_series
 
 
 def test_category_chart_uses_pastel_fill_with_distinct_side_and_month_borders_and_print_space():
-    assert '.categoryBar--planned{stroke:#244b61}' in TEMPLATE
+    assert '.categoryBar{fill:var(--category-fill);stroke:var(--category-stroke);fill-opacity:1' in TEMPLATE
+    assert '.categoryBar--planned{stroke-width:3.2}' in TEMPLATE
+    assert '.categoryBar--actual{stroke-width:1.4}' in TEMPLATE
     assert '.categoryBar--previous{stroke-dasharray:6 4}' in TEMPLATE
-    assert 'body[data-theme="dark"] .categoryBar--planned{stroke:#d8edf8}' in TEMPLATE
+    assert "if(info.mark==='P')return {fill:mixHexColor" in TEMPLATE
+    assert "stroke:mixHexColor(color,'#000000',.52)" in TEMPLATE
+    assert "stroke:mixHexColor(color,'#000000',.30)" in TEMPLATE
     assert 'categoryBar--${sideClass} categoryBar--${info.periodClass}' in TEMPLATE
     assert 'class="card cardWide categoryChartCard"' in TEMPLATE
     assert '.categoryChartCard #chartCategory svg{width:100%!important;height:auto!important;max-height:none!important' in TEMPLATE
+    assert 'font_size = 7.6' in PDF_SOURCE
+    assert '.categoryBarValue{font-size:11.5px!important}' in TEMPLATE
 
 
 def test_supplier_period_context_and_waterfall_high_contrast_labels_are_present():
@@ -227,22 +234,20 @@ def test_supplier_period_context_and_waterfall_high_contrast_labels_are_present(
     assert 'waterfallValueText' in TEMPLATE
 
 
-def test_waterfall_uses_filtered_rows_and_collision_aware_labels():
-    contribution_fn = TEMPLATE.split('function waterfallContributionData', 1)[1].split('function waterfallLabelsOverlap', 1)[0]
+def test_monthly_comparison_replaces_waterfall_and_uses_filtered_rows_with_local_filters():
     render_fn = TEMPLATE.split('function render()', 1)[1].split('function reportMonths', 1)[0]
-    refined_fn = TEMPLATE.split('function waterfallRefined', 1)[1].split('function donut', 1)[0]
-
-    assert "(gr[label]||0)-(gp[label]||0)" in contribution_fn
-    assert "label:'Outros fluxos'" in contribution_fn
-    assert "reduce((sum,row)=>sum+row.v,0)" in contribution_fn
     assert "let p=D.previsto.filter(pass),r=D.realizado.filter(pass)" in render_fn
-    assert "waterfallRefined(p,r)" in render_fn
-    assert 'function positionWaterfallLabels' in TEMPLATE
-    assert 'waterfallLabelsOverlap(box,other)' in TEMPLATE
-    assert 'waterfallValueLeader' in TEMPLATE
-    assert '<title>' in refined_fn
-    assert 'display:none' not in refined_fn
-    assert 'preferred+(stagger%2?-17:0)' not in refined_fn
+    assert "el('chartMonthlyComparison').innerHTML=monthlyComparisonChart(p,r)" in render_fn
+    assert '<h2>Previsto x Realizado por mês</h2>' in TEMPLATE
+    assert 'Contribuição para o desvio por Fluxo JMM' not in TEMPLATE
+    assert 'id="timelineMonthFilter"' in TEMPLATE
+    assert 'id="timelineSeriesFilter"' in TEMPLATE
+    assert 'function monthlyComparisonChart(p,r)' in TEMPLATE
+    assert "state.timelineMonths.length?available.filter" in TEMPLATE
+    assert "if(state.timelineSeries!=='actual')" in TEMPLATE
+    assert "if(state.timelineSeries!=='planned')" in TEMPLATE
+    assert '<title>${esc(tooltip)}</title>' in TEMPLATE
+    assert 'barMarkup+labelMarkup' in TEMPLATE
 
 
 def test_report_allows_complementary_files_base_editing_and_inline_classification():
@@ -361,10 +366,19 @@ def test_top_filters_support_hover_click_keyboard_escape_and_touch_fallback():
     assert 'applyFiltersNow' not in interactions
 
 
-def test_updated_reimportable_workbook_download_is_exposed():
+def test_excel_downloads_send_only_filter_state_to_authenticated_backend_export():
     assert "['atualizado','Planilha atualizada do relatório']" in TEMPLATE
+    assert 'data-filtered-export="${kind}"' in TEMPLATE
+    assert "reportApi('/api/report/export'" in TEMPLATE
+    assert 'filters:currentGlobalFilterPayload()' in TEMPLATE
+    assert "category:[...state.category]" in TEMPLATE
+    assert "flow:[...state.flow]" in TEMPLATE
+    assert "supplier:[...state.supplier]" in TEMPLATE
+    assert "emission:[...state.emission]" in TEMPLATE
+    assert 'previsto:D.previsto' not in TEMPLATE
+    assert 'realizado:D.realizado' not in TEMPLATE
     excel_source = (ROOT / 'app' / 'services' / 'excel_export.py').read_text(encoding='utf-8')
-    assert 'Relatorio_atualizado_reimportavel.xlsx' in excel_source
+    assert 'Relatorio_atualizado_filtrado.xlsx' in excel_source
     assert '_write_updated_report_workbook' in excel_source
 
 
@@ -372,3 +386,41 @@ def test_monthly_cards_require_a_filter_and_never_use_generic_latest_month_tag()
     assert 'Aplique pelo menos um filtro para visualizar os cards mensais.' in TEMPLATE
     assert "periodLabel:monthLabel(latest+'-01',multiYear)" in TEMPLATE
     assert "periodLabel:'MÊS MAIS RECENTE'" not in TEMPLATE
+
+
+def test_every_graph_has_dynamic_global_and_local_filter_subtitle():
+    for element_id in (
+        'categoryFilterSummary',
+        'monthlyCardsFilterSummary',
+        'supplierFilterSummary',
+        'timelineFilterSummary',
+    ):
+        assert f'id="{element_id}"' in TEMPLATE
+    assert 'function globalFilterParts()' in TEMPLATE
+    assert 'function updateChartFilterSummaries(p,r)' in TEMPLATE
+    assert "el('categoryFilterSummary').textContent=filterSummaryWith" in TEMPLATE
+    assert "el('monthlyCardsFilterSummary').textContent=filterSummaryWith" in TEMPLATE
+    assert "el('supplierFilterSummary').textContent=filterSummaryWith()" in TEMPLATE
+    assert "el('timelineFilterSummary').textContent=filterSummaryWith" in TEMPLATE
+    assert 'updateChartFilterSummaries(p,r)' in TEMPLATE
+
+
+def test_monthly_cards_have_isolated_series_filter():
+    assert 'id="monthlyCardSeriesFilter"' in TEMPLATE
+    assert "state.monthlyCardSeries!=='actual'" in TEMPLATE
+    assert "state.monthlyCardSeries!=='planned'" in TEMPLATE
+    assert "state.monthlyCardSeries==='planned'" in TEMPLATE
+    assert "state.monthlyCardSeries==='actual'" in TEMPLATE
+    pass_fn = TEMPLATE.split('function pass(x)', 1)[1].split('function group', 1)[0]
+    assert 'monthlyCardSeries' not in pass_fn
+    assert "renderMonthlyCardsLocal()" in TEMPLATE
+
+
+def test_local_chart_filters_do_not_trigger_full_report_render():
+    category_handler = TEMPLATE.split("el('categorySeriesFilter').addEventListener", 1)[1].split('\n', 1)[0]
+    timeline_handlers = TEMPLATE.split('function buildTimelineFilters()', 1)[1].split('\n', 1)[0]
+    monthly_handlers = TEMPLATE.split('function buildMonthFilter()', 1)[1].split('\n', 1)[0]
+    assert 'renderCategoryLocal()' in category_handler and 'render()' not in category_handler
+    assert 'renderTimelineLocal()' in timeline_handlers and 'render()' not in timeline_handlers
+    assert 'renderMonthlyCardsLocal()' in monthly_handlers and 'render()' not in monthly_handlers
+    assert 'function currentFilteredRows()' in TEMPLATE
