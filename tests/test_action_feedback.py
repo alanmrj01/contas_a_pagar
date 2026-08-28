@@ -66,6 +66,9 @@ def test_report_reuses_loading_and_carries_completion_across_refresh():
 def test_report_errors_and_exports_use_nonblocking_feedback():
     assert "function reportError(error){actionFeedback.error(" in REPORT
     assert "alert(" not in REPORT
-    assert "data-download-feedback" in REPORT
+    assert "data-filtered-export" in REPORT
+    assert "actionFeedback.started('Preparando a planilha com os filtros atuais...'" in REPORT
+    assert "Planilha filtrada preparada com ${rows} registro(s)." in REPORT
+    assert "Os filtros atuais não retornaram registros." in REPORT
     assert "Download solicitado ao navegador." in REPORT
     assert "Preparando o PDF com os filtros atuais..." in REPORT

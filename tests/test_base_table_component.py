@@ -44,3 +44,14 @@ def test_shared_component_requires_confirmation_and_keeps_save_validation():
     assert "Preencha Cód Fornecedor, Fornecedor, Fluxo JMM e Categoria" in COMPONENT
     assert "method:'PUT'" in APP_JS
     assert "method:'PUT'" in REPORT
+
+
+def test_shared_component_selects_the_whole_row_without_interfering_with_edit_fields():
+    assert 'class="base-selectable-row${selectedClass}"' in COMPONENT
+    assert 'tabindex="0" aria-selected=' in COMPONENT
+    assert "body.addEventListener('click'" in COMPONENT
+    assert "!isInteractiveTarget(event.target)" in COMPONENT
+    assert "event.key === 'Enter' || event.key === ' '" in COMPONENT
+    assert "input,select,textarea,button,a,label" in COMPONENT
+    assert '.base-selectable-row.is-selected td' in (ROOT / 'webapp' / 'static' / 'styles.css').read_text(encoding='utf-8')
+    assert '.reportModal .base-selectable-row.is-selected td' in REPORT

@@ -5,6 +5,7 @@
   const emptyRow = () => ({supplier_code:'', supplier:'', flow:'', category:''});
   const normalized = value => String(value ?? '').trim().toLocaleLowerCase('pt-BR');
   const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+  const isInteractiveTarget = target => Boolean(target.closest('input,select,textarea,button,a,label,[contenteditable="true"],[role="button"]'));
   let searchCache = new WeakMap();
 
   function normalizedFilters(filters) {
@@ -114,12 +115,27 @@
       body.innerHTML = indexes.map(index => {
         const item = items[index];
         const checked = selected.has(item) ? ' checked' : '';
+        const selectedClass = checked ? ' is-selected' : '';
         const cells = FIELDS.map(field => editing
           ? `<td><input class="${inputClass}" data-base-index="${index}" data-base-field="${field}" value="${escapeHtml(item[field])}" autocomplete="off"></td>`
           : `<td>${escapeHtml(item[field])}</td>`).join('');
-        return `<tr><td class="base-select-cell"><input class="${checkboxClass}" type="checkbox" data-base-select="${index}" aria-label="Selecionar linha ${index + 1}"${checked}></td>${cells}</tr>`;
+        return `<tr class="base-selectable-row${selectedClass}" data-base-row="${index}" tabindex="0" aria-selected="${checked ? 'true' : 'false'}"><td class="base-select-cell"><input class="${checkboxClass}" type="checkbox" data-base-select="${index}" aria-label="Selecionar linha ${index + 1}"${checked}></td>${cells}</tr>`;
       }).join('');
       updateControls(indexes);
+    }
+
+    function setRowSelected(row, item, checked) {
+      checked ? selected.add(item) : selected.delete(item);
+      row.classList.toggle('is-selected', checked);
+      row.setAttribute('aria-selected', String(checked));
+      const checkbox = row.querySelector('[data-base-select]');
+      if (checkbox) checkbox.checked = checked;
+      updateControls();
+    }
+
+    function toggleRow(row) {
+      const item = items[Number(row.dataset.baseRow)];
+      if (item) setRowSelected(row, item, !selected.has(item));
     }
 
     function applyFilters(delay = 160) {
@@ -223,8 +239,18 @@
       if (!checkbox) return;
       const item = items[Number(checkbox.dataset.baseSelect)];
       if (!item) return;
-      checkbox.checked ? selected.add(item) : selected.delete(item);
-      updateControls();
+      setRowSelected(checkbox.closest('[data-base-row]'), item, checkbox.checked);
+    });
+    body.addEventListener('click', event => {
+      const row = event.target.closest('[data-base-row]');
+      if (row && !isInteractiveTarget(event.target)) toggleRow(row);
+    });
+    body.addEventListener('keydown', event => {
+      const row = event.target.closest('[data-base-row]');
+      if (row && event.target === row && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault();
+        toggleRow(row);
+      }
     });
     filterInputs.forEach(input => input.addEventListener('input', () => applyFilters()));
     config.selectPage.addEventListener('change', () => {

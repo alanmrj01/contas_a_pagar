@@ -166,8 +166,10 @@ def test_light_warning_subtitle_has_dedicated_contrast_and_larger_font():
 
 
 def test_supplier_lollipop_values_are_slightly_larger_only_on_value_labels():
-    assert '.supplierValueLab{font-size:11.8px!important;font-weight:850!important}' in TEMPLATE
+    assert '.supplierValueLab{font-size:14px!important;font-weight:850!important}' in TEMPLATE
     assert 'class="valueLab supplierValueLab"' in TEMPLATE
+    assert 'c.setFont("Helvetica-Bold", 7.0)' in PDF_SOURCE
+    assert 'value_w = 82' in PDF_SOURCE
 
 
 def test_top_punctuality_kpi_is_removed_but_audit_data_can_remain_elsewhere():
@@ -214,10 +216,12 @@ def test_category_chart_uses_pastel_fill_with_distinct_side_and_month_borders_an
     assert '.categoryBar{fill:var(--category-fill);stroke:var(--category-stroke);fill-opacity:1' in TEMPLATE
     assert '.categoryBar--planned{stroke-width:3.2}' in TEMPLATE
     assert '.categoryBar--actual{stroke-width:1.4}' in TEMPLATE
-    assert '.categoryBar--previous{stroke-dasharray:6 4}' in TEMPLATE
-    assert "if(info.mark==='P')return {fill:mixHexColor" in TEMPLATE
-    assert "stroke:mixHexColor(color,'#000000',.52)" in TEMPLATE
-    assert "stroke:mixHexColor(color,'#000000',.30)" in TEMPLATE
+    category_css = TEMPLATE.split('.categoryBar{', 1)[1].split('.categoryBar:hover', 1)[0]
+    assert 'stroke-dasharray' not in category_css
+    assert "monthFamilies=['#68AFC2','#D29A7C']" in TEMPLATE
+    assert "fill:mixHexColor(base,'#ffffff',.50)" in TEMPLATE
+    assert "fill:mixHexColor(base,'#000000',.04)" in TEMPLATE
+    assert 'monthIndex:index' in TEMPLATE
     assert 'categoryBar--${sideClass} categoryBar--${info.periodClass}' in TEMPLATE
     assert 'class="card cardWide categoryChartCard"' in TEMPLATE
     assert '.categoryChartCard #chartCategory svg{width:100%!important;height:auto!important;max-height:none!important' in TEMPLATE

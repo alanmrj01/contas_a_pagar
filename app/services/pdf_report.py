@@ -187,6 +187,7 @@ def _category_month_rows(previsto, realizado):
                     "label": f"{labels[index]} {mark}",
                     "kind": kind,
                     "mark": mark,
+                    "month_index": index,
                     "previous": len(months) > 1 and index == 0,
                     "value": float(values.get((month, mark), 0.0)),
                 })
@@ -263,15 +264,15 @@ def _category_chart(c, x, y, w, h, rows):
             bar_x = min(zero_x, endpoint)
             bar_w = max(1.0, abs(endpoint - zero_x))
             planned = item["mark"] == "P"
-            previous = bool(item["previous"])
-            fill_color = _mix_color(color, white, (.58 if previous else .45) if planned else (.24 if previous else .10))
-            stroke_color = _mix_color(color, black, .52 if planned else .30)
+            month_families = (HexColor("#68AFC2"), HexColor("#D29A7C"))
+            family = month_families[min(int(item.get("month_index") or 0), len(month_families) - 1)]
+            base_color = _mix_color(color, family, .70)
+            fill_color = _mix_color(base_color, white, .50) if planned else _mix_color(base_color, black, .04)
+            stroke_color = _mix_color(base_color, black, .55 if planned else .32)
             c.setFillColor(fill_color)
             c.setStrokeColor(stroke_color)
             c.setLineWidth(2.0 if planned else .85)
-            c.setDash(4, 2) if item["previous"] else c.setDash()
             c.roundRect(bar_x, cy - 4.2, bar_w, 8.4, 2.6, fill=1, stroke=1)
-            c.setDash()
             c.setFont("Helvetica-Bold", 7.1)
             c.setFillColor(TEXT)
             c.drawRightString(left - 7, cy - 2.5, item["label"])
@@ -361,7 +362,8 @@ def _lollipop(c, x, y, w, h, rows):
         return
     maxv = max(abs(r["variance"]) for r in rows) or 1
     label_w = 150
-    plot_w = w - label_w - 55
+    value_w = 82
+    plot_w = w - label_w - value_w
     rh = h / len(rows)
     zero = x + label_w + plot_w / 2
     c.setStrokeColor(LINE)
@@ -379,7 +381,7 @@ def _lollipop(c, x, y, w, h, rows):
         c.setFillColor(color)
         c.circle(zero + dx, yy, 4.2, fill=1, stroke=0)
         label = brl(float(row["variance"]))
-        c.setFont("Helvetica-Bold", 5.6)
+        c.setFont("Helvetica-Bold", 7.0)
         c.setFillColor(color)
         c.drawRightString(x + w, yy - 2, label)
 

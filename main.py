@@ -629,16 +629,27 @@ async def _materialize_financial_uploads(sid: str, upload_ids: list[str], work: 
         record = store.upload_record(sid, upload_id, purpose="financial")
         if not record.complete:
             raise RuntimeError(f"O arquivo '{record.filename}' ainda não terminou de ser enviado.")
-        dest = work / f"{position:03d}" / record.filename
-        await asyncio.to_thread(decrypt_uploaded_chunks, record, dest)
+        decrypted = work / f".src_{position:03d}{record.extension}"
+        read_copy = work / f"{position:03d}" / record.filename
+        await asyncio.to_thread(decrypt_uploaded_chunks, record, decrypted)
+        read_copy.parent.mkdir(parents=True, exist_ok=True)
+        copy_temp = work / f".copy_{position:03d}{record.extension}"
+        try:
+            await asyncio.to_thread(shutil.copyfile, decrypted, copy_temp)
+            if copy_temp.stat().st_size != record.expected_size:
+                raise RuntimeError("O tamanho da cópia interna de leitura não confere com o arquivo enviado.")
+            copy_temp.replace(read_copy)
+        finally:
+            copy_temp.unlink(missing_ok=True)
+            decrypted.unlink(missing_ok=True)
         await asyncio.to_thread(
             validate_office_container,
-            dest,
+            read_copy,
             record.extension,
             max_file_bytes=store.max_upload_bytes,
             max_expanded_bytes=store.max_office_expanded_bytes,
         )
-        materialized.append(dest)
+        materialized.append(read_copy)
     return materialized
 
 

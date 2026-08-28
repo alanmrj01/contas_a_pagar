@@ -412,6 +412,50 @@ def test_http_flow_encrypted_upload_validate_generate_and_private_downloads(tmp_
     assert not list(session_dirs[0].rglob("*.pdf"))
 
 
+def test_financial_validation_uses_a_sanitized_internal_read_copy(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+    client = TestClient(main.app)
+    login(client)
+    corporate_source = tmp_path / "origem corporativa.xlsx"
+    corporate_source.write_bytes((ROOT / "samples" / "PLANILHAS PAGAR E PREVISTO.xlsx").read_bytes())
+    upload_id = stage_file(client, corporate_source)
+    original_validate = main.engine.validate
+    observed_paths = []
+
+    def validate_from_copy(sid, paths):
+        observed_paths.extend(Path(path) for path in paths)
+        assert all(path.is_file() and path.parent.name.isdigit() for path in paths)
+        for path in paths:
+            work = path.parents[1]
+            assert not (work / f".src_{int(path.parent.name):03d}{path.suffix}").exists()
+        return original_validate(sid, paths)
+
+    monkeypatch.setattr(main.engine, "validate", validate_from_copy)
+    response = client.post(
+        "/api/validate",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"upload_ids": [upload_id]},
+    )
+    assert response.status_code == 200, response.text
+    assert observed_paths and observed_paths[0].name == corporate_source.name
+
+
+def test_internal_read_copy_does_not_make_an_invalid_workbook_valid(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+    client = TestClient(main.app)
+    login(client)
+    invalid = tmp_path / "planilha_corrompida.xlsx"
+    invalid.write_bytes(b"nao e uma planilha office")
+    upload_id = stage_file(client, invalid)
+    response = client.post(
+        "/api/validate",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"upload_ids": [upload_id]},
+    )
+    assert response.status_code == 400
+    assert "office" in response.json()["detail"].lower()
+
+
 def test_filtered_report_exports_are_reapplied_server_side_and_kept_private(tmp_path, monkeypatch):
     from app.services.excel_reader import read_excel
     from app.services.sheet_detector import detect_input_tables
