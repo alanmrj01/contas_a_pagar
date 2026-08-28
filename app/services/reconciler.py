@@ -29,7 +29,7 @@ def _safe_str(value: Any) -> str:
     return str(value or "").strip()
 
 
-def _code(value: Any) -> str:
+def normalize_supplier_code(value: Any) -> str:
     if value in (None, ""):
         return ""
     if isinstance(value, bool):
@@ -40,6 +40,9 @@ def _code(value: Any) -> str:
         return str(int(value)) if value.is_integer() else str(value).strip()
     # Identificadores textuais permanecem textuais: "001" não pode virar "1".
     return str(value).strip()
+
+
+_code = normalize_supplier_code
 
 
 def _source(row: dict[str, Any]) -> dict[str, Any]:
@@ -156,6 +159,7 @@ def _lookup_classification(
     by_name: dict[str, dict[str, Any] | None],
     direct: tuple[str, str] | None,
     history_by_code: dict[str, tuple[str, str] | None],
+    blocked_import_codes: set[str],
 ) -> tuple[dict[str, Any] | None, str]:
     # 1) Código exato da BASE DADOS é a chave determinística principal.
     if code and code in by_code:
@@ -166,6 +170,11 @@ def _lookup_classification(
     exact_name = by_name.get(norm) if norm else None
     if exact_name is not None:
         return exact_name, "base_nome"
+
+    # Um código ausente da base com classificações conflitantes no próprio
+    # arquivo não pode ser resolvido por uma de suas linhas isoladamente.
+    if code and code in blocked_import_codes:
+        return None, "nao_resolvida"
 
     # 3) A classificação completa já materializada na própria linha é preservada.
     if direct:
@@ -192,8 +201,19 @@ def _warning(title: str, summary: str, details: list[dict[str, Any]], level: str
     return {"level": level, "title": title, "summary": summary, "details": details}
 
 
-def reconcile(previsto_table: TableData, realizado_table: TableData, base_table: TableData) -> ReconcileResult:
+def reconcile(
+    previsto_table: TableData,
+    realizado_table: TableData,
+    base_table: TableData,
+    *,
+    blocked_import_classification_codes: set[str] | None = None,
+) -> ReconcileResult:
     by_code, by_name = _build_base(base_table)
+    blocked_import_codes = {
+        normalize_supplier_code(code)
+        for code in (blocked_import_classification_codes or set())
+        if normalize_supplier_code(code)
+    }
     warnings: list[dict[str, Any]] = []
 
     pc = _required(previsto_table, "PREVISTO", [
@@ -242,7 +262,9 @@ def reconcile(previsto_table: TableData, realizado_table: TableData, base_table:
             p_bad_dates.append({**src, "supplier_code": code, "supplier": source_name, "value": value, "raw_date": _safe_str(raw_date)})
 
         direct = _classification_pair(row, p_flow, p_category)
-        entry, match = _lookup_classification(code, source_name, by_code, by_name, direct, history_by_code)
+        entry, match = _lookup_classification(
+            code, source_name, by_code, by_name, direct, history_by_code, blocked_import_codes
+        )
         if entry:
             canonical_code = entry["code"]
             supplier = entry["name"]
@@ -319,7 +341,9 @@ def reconcile(previsto_table: TableData, realizado_table: TableData, base_table:
             punctuality = "Antecipado" if paid < due else "Dentro do Prazo" if paid == due else "Atrasado"
 
         direct = _classification_pair(row, r_flow, r_category)
-        entry, match = _lookup_classification(code, source_name, by_code, by_name, direct, history_by_code)
+        entry, match = _lookup_classification(
+            code, source_name, by_code, by_name, direct, history_by_code, blocked_import_codes
+        )
         if entry:
             canonical_code = entry["code"]
             supplier = entry["name"]

@@ -16,7 +16,7 @@ class ValueParseError(ValueError):
 
 def to_float(value: Any, *, field: str = "valor") -> float:
     if value in (None, ""):
-        return 0.0
+        raise ValueParseError(f"{field}: valor ausente")
     if isinstance(value, bool):
         raise ValueParseError(f"{field}: valor booleano não é monetário")
     if isinstance(value, (int, float)):
@@ -26,7 +26,7 @@ def to_float(value: Any, *, field: str = "valor") -> float:
         return number
     text = str(value).strip().replace("R$", "").replace(" ", "")
     if not text:
-        return 0.0
+        raise ValueParseError(f"{field}: valor ausente")
     if "," in text and "." in text:
         if text.rfind(",") > text.rfind("."):
             text = text.replace(".", "").replace(",", ".")

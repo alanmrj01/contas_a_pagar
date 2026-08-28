@@ -65,13 +65,22 @@ def _consolidated_value_columns(table: TableData) -> tuple[str, str, str] | None
     A identificação não usa posição da coluna, sinal isolado nem aproximação de
     nomes. Isso evita interpretar layouts desconhecidos como dados financeiros.
     """
-    c_prev = find_column(table, "Previsto")
-    c_real = find_column(table, "Realizado")
+    exact_headers = {normalize_text(header): header for header in table.headers}
+
+    def exact(*aliases: str) -> str | None:
+        for alias in aliases:
+            header = exact_headers.get(normalize_text(alias))
+            if header is not None:
+                return header
+        return None
+
+    c_prev = exact("Previsto")
+    c_real = exact("Realizado")
     if c_prev and c_real:
         return "previsto_realizado", c_prev, c_real
 
-    c_value = find_column(table, "Valor")
-    c_value2 = find_column(table, "Valor2", "Valor 2")
+    c_value = exact("Valor")
+    c_value2 = exact("Valor2", "Valor 2")
     if c_value and c_value2:
         return "valor_valor2", c_value, c_value2
     return None

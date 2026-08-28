@@ -172,7 +172,8 @@ def test_fixed_username_domain_is_absent_and_secret_key_stays_server_side():
     removed_setting = "SUPABASE_USERNAME" + "_DOMAIN"
     assert removed_setting not in combined
     assert "@contasapagar.local" not in combined
-    assert "body:JSON.stringify({" in LOGIN_JS
+    assert "body:JSON.stringify(body)" in LOGIN_JS
+    assert "await authPost('/api/auth/login', {" in LOGIN_JS
     assert "email:emailInput.value.trim().toLowerCase()" in LOGIN_JS
     frontend = "\n".join([LOGIN_HTML, LOGIN_JS, JS])
     assert "SUPABASE_SECRET_KEY" not in frontend

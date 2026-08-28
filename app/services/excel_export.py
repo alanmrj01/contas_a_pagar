@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import math
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,26 @@ PCT_FMT = {"num_format": '0.00%;[Red]-0.00%'}
 DATE_FMT = {"num_format": 'dd/mm/yyyy'}
 
 
-def _write_xlsx(path: Path, sheet_name: str, columns: list[tuple[str, str]], rows: list[dict[str, Any]]) -> None:
+def _required_number(value: Any, field: str) -> float:
+    if value is None or (isinstance(value, str) and not value.strip()) or isinstance(value, bool):
+        raise ValueError(f"{field}: valor monetário ausente ou inválido na exportação")
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field}: valor monetário inválido na exportação") from exc
+    if not math.isfinite(number):
+        raise ValueError(f"{field}: valor monetário não finito na exportação")
+    return number
+
+
+def _write_xlsx(
+    path: Path,
+    sheet_name: str,
+    columns: list[tuple[str, str]],
+    rows: list[dict[str, Any]],
+    *,
+    required_money_keys: set[str] | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     wb = xlsxwriter.Workbook(path)
     ws = wb.add_worksheet(sheet_name[:31])
@@ -38,7 +58,12 @@ def _write_xlsx(path: Path, sheet_name: str, columns: list[tuple[str, str]], row
         for c_idx, (key, _) in enumerate(columns):
             value = row.get(key)
             if key in {"value", "planned", "actual", "variance", "unclassified_value"}:
-                ws.write_number(r_idx, c_idx, float(value or 0.0), money)
+                if value is None or (isinstance(value, str) and not value.strip()):
+                    if key in (required_money_keys or set()):
+                        _required_number(value, key)
+                    ws.write_blank(r_idx, c_idx, None, normal)
+                else:
+                    ws.write_number(r_idx, c_idx, _required_number(value, key), money)
             elif key == "variance_pct":
                 if value is None:
                     ws.write_blank(r_idx, c_idx, None, normal)
@@ -94,7 +119,7 @@ def _write_updated_report_workbook(path: Path, result: ReconcileResult) -> None:
             for col_idx, (key, _) in enumerate(columns):
                 value = row.get(key)
                 if key == "value":
-                    ws.write_number(row_idx, col_idx, float(value or 0.0), money)
+                    ws.write_number(row_idx, col_idx, _required_number(value, key), money)
                 elif key in date_keys and value:
                     try:
                         ws.write_datetime(row_idx, col_idx, datetime.fromisoformat(str(value)), date_fmt)
@@ -115,7 +140,7 @@ def export_report_workbooks(result: ReconcileResult, output_dir: Path) -> dict[s
         ("title", "Título previsto"), ("supplier_code", "Cód Fornecedor"), ("supplier_source", "Fornecedor original"),
         ("supplier", "Fornecedor classificado"), ("date", "Data prevista"), ("value", "Valor previsto"),
         ("flow", "Fluxo JMM"), ("category", "Categoria"), ("match", "Regra classificação"),
-    ], result.previsto)
+    ], result.previsto, required_money_keys={"value"})
 
     r_path = exports / "Realizado_normalizado.xlsx"
     _write_xlsx(r_path, "REALIZADO", [
@@ -126,14 +151,14 @@ def export_report_workbooks(result: ReconcileResult, output_dir: Path) -> dict[s
         ("punctuality", "Pontualidade"), ("company", "Empresa"), ("branch", "Filial"),
         ("account", "Conta contábil"), ("financial_account", "Conta financeira"), ("cost_center", "Centro de custo"),
         ("match", "Regra classificação"),
-    ], result.realizado)
+    ], result.realizado, required_money_keys={"value"})
 
     s_path = exports / "Analise_por_fornecedor.xlsx"
     _write_xlsx(s_path, "FORNECEDORES", [
         ("supplier_code", "Cód Fornecedor"), ("supplier", "Fornecedor"), ("category", "Categoria"), ("flow", "Fluxo JMM"),
         ("planned", "Previsto"), ("actual", "Realizado"), ("variance", "Desvio"), ("variance_pct", "Variação %"),
         ("planned_records", "Linhas previsto"), ("actual_records", "Títulos realizado"),
-    ], aggregate_suppliers(result.previsto, result.realizado))
+    ], aggregate_suppliers(result.previsto, result.realizado), required_money_keys={"planned", "actual", "variance"})
 
     alert_rows: list[dict[str, Any]] = []
     for warning in result.warnings:

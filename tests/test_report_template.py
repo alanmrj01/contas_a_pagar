@@ -56,8 +56,9 @@ def test_lists_are_complete_in_html_and_static_pdf_is_paginated():
     assert 'Títulos realizados - lista completa' in PDF_SOURCE
     assert 'Comparativo mensal completo' in PDF_SOURCE
     assert 'category_chunks = [category_rows[index:index + 8]' in PDF_SOURCE
-    assert 'Barras horizontais; todos os valores exatos aparecem' in PDF_SOURCE
+    assert 'todos os valores exatos aparecem em rótulos de alto contraste' in PDF_SOURCE
     assert 'value_bubble' in PDF_SOURCE
+    assert 'def _category_month_rows(' in PDF_SOURCE
 
 
 def test_avisos_are_excluded_from_both_pdf_paths():
@@ -183,14 +184,17 @@ def test_report_content_uses_layout_scale_instead_of_native_browser_zoom():
     assert ':root{--report-screen-scale:.9}' in TEMPLATE
 
 
-def test_category_chart_compares_named_current_and_previous_months():
+def test_category_chart_month_selection_obeys_zero_one_two_and_more_than_two_rules():
     assert 'function categoryComparisonMonth(items)' in TEMPLATE
-    assert 'previousMonth=previousMonthKey(currentMonth)' in TEMPLATE
+    month_selector = TEMPLATE.split('function selectCategoryMonths', 1)[1].split('function categoryComparisonMonth', 1)[0]
+    assert 'if(chosen.length===1)return chosen' in month_selector
+    assert 'if(chosen.length>=2)return chosen.slice(-2)' in month_selector
+    assert 'return months.slice(-2)' in month_selector
+    assert 'previousMonthKey' not in month_selector
     assert "categoryMonthHint" in TEMPLATE
     assert "categoryMonthLegend" in TEMPLATE
-    assert "previousLabel=monthLabel(previousMonth+'-01',true)" in TEMPLATE
-    assert "currentLabel=monthLabel(currentMonth+'-01',true)" in TEMPLATE
-    assert "currentP={},currentR={},previousP={},previousR={}" in TEMPLATE
+    assert "periodText=labels.join(' x ')" in TEMPLATE
+    assert "comparisonMonths.forEach" in TEMPLATE
 
 
 def test_category_chart_is_horizontal_keeps_every_value_label_and_has_own_series_filter():
@@ -203,6 +207,15 @@ def test_category_chart_is_horizontal_keeps_every_value_label_and_has_own_series
     assert 'categoryBarValue' in TEMPLATE
     assert 'el(\'chartCategory\').innerHTML=categoryBarsHorizontal' in TEMPLATE
     assert 'categoryScreenVisibleIndices(values,slot)' not in TEMPLATE.split('function categoryBarsHorizontal', 1)[1].split('const MONTHS_PT', 1)[0]
+
+
+def test_category_chart_uses_pastel_fill_with_distinct_side_and_month_borders_and_print_space():
+    assert '.categoryBar--planned{stroke:#244b61}' in TEMPLATE
+    assert '.categoryBar--previous{stroke-dasharray:6 4}' in TEMPLATE
+    assert 'body[data-theme="dark"] .categoryBar--planned{stroke:#d8edf8}' in TEMPLATE
+    assert 'categoryBar--${sideClass} categoryBar--${info.periodClass}' in TEMPLATE
+    assert 'class="card cardWide categoryChartCard"' in TEMPLATE
+    assert '.categoryChartCard #chartCategory svg{width:100%!important;height:auto!important;max-height:none!important' in TEMPLATE
 
 
 def test_supplier_period_context_and_waterfall_high_contrast_labels_are_present():

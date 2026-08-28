@@ -18,28 +18,38 @@
   "approved_web_overrides": {
     "app/services/sheet_detector.py": {
       "desktop_2_0_2_sha256": "399CBD8CCF98AAB54915EA436BB06A2190986FBC4775FC41D0F9B94EF699EBF0",
-      "current_sha256": "A1D7E984BEC7F3776169DD422A8AAAA6CFFA563ECF92A32DD631E83227784B8E",
-      "reason": "Alterações cirúrgicas aprovadas: suporte determinístico ao consolidado Valor/Valor2, mantendo Situação FC como única chave de separação PREVISTO/REALIZADO, e preservação de Fluxo JMM/Categoria para a precedência auditável do reconciliador."
+      "current_sha256": "4C82EF8891565C46C878F679EB1DD7E348F7BF40C9B5CFACCC0ED0B6681E177D",
+      "reason": "Alterações cirúrgicas aprovadas: suporte determinístico ao consolidado Valor/Valor2, mantendo Situação FC como única chave de separação PREVISTO/REALIZADO, identificação exata e distinta das colunas monetárias e preservação de Fluxo JMM/Categoria para a precedência auditável do reconciliador."
     },
     "app/services/reconciler.py": {
       "desktop_2_0_2_sha256": "43A4D065F0EACD6B6EC434138577BB7AE959F30441667F6987A1C598D611D255",
-      "current_sha256": "1FF726CA662D99EFA021951BBB020CB4089644CF98EC2283DC10B232C600F611",
-      "reason": "Alteração cirúrgica aprovada: precedência determinística por código da base, nome exato inequívoco, classificação direta da planilha e histórico inequívoco do mesmo código, sem similaridade."
+      "current_sha256": "E93543824BEE5FF9E766D004F5FD18ECCCF1075B6330E83B64971CCB1D9AE61D",
+      "reason": "Alteração cirúrgica aprovada: precedência determinística por código da base, nome exato inequívoco, classificação direta da planilha e histórico inequívoco do mesmo código, bloqueando códigos com conflito interno e sem similaridade."
     },
     "app/report/report_template.html": {
       "desktop_2_0_2_sha256": "EE17F692ED1B48D4BE03F2A5B20B22940674844F4805C2B84990552A40FD720B",
-      "current_sha256": "89A16A8ADD8ADC5CCA5A411F7354A8641BF7BE71616F4E697041295730866BEC",
-      "reason": "Alterações cirúrgicas aprovadas no relatório: gráfico por categoria horizontal com filtro Previsto/Realizado, rótulos de desvio refinados, indicação dos meses, cor preta nos identificadores laterais de mês/tipo desse gráfico, edição/classificação da Base de Dados, planilhas complementares, atualização integral após cada operação e saída segura da sessão. O motor financeiro permanece inalterado."
+      "current_sha256": "5445FB0C02CCF8712869B3FD8799F98D51A546B87D7CC97F6A403B3619BFF305",
+      "reason": "Alterações cirúrgicas aprovadas no relatório: gráfico por categoria horizontal com filtro Previsto/Realizado, regra exata de 0/1/2/>2 meses, contraste pastel por preenchimento/borda/tracejado, área de impressão ampliada, rótulos de desvio refinados, edição/classificação da Base de Dados, planilhas complementares, atualização integral após cada operação e saída segura da sessão. O motor financeiro permanece inalterado."
     },
     "app/services/excel_export.py": {
       "desktop_2_0_2_sha256": "96104948972EA7CF7E8D3E8A68EC59506DBC1A57D3944C66C7FA482F7CA98904",
-      "current_sha256": "7E2C84EA7286CBE0FB23B5A8155ACF9A7FB80FE239B50BA2B1FFB4F1DC32980E",
-      "reason": "Alteração cirúrgica aprovada: nova planilha atualizada e reimportável, preservando os dados normalizados e as classificações realizadas no relatório."
+      "current_sha256": "D3C532ADCF5364ED409B23D07F1208D507C5FC4DCF2C2C12D4E2ADFF0CC9B465",
+      "reason": "Alteração cirúrgica aprovada: planilhas Previsto/Realizado estritamente segmentadas e planilha atualizada reimportável, preservando valores e classificações materializados sem converter valor financeiro ausente em zero."
     },
     "app/services/pdf_report.py": {
       "desktop_2_0_2_sha256": "E31AA54DAA3F12B24EBD798C052A7930529E37906C53CF2CBA419522BF40F763",
-      "current_sha256": "C20E6AC23A8DB5FDC2C8CEFA61B8CE24EC5CAAE4FE9FFF346BD4C38267AC90DB",
-      "reason": "Alteração cirúrgica aprovada: gráfico por categoria horizontal e paginação dos rótulos para que todos os valores permaneçam visíveis no PDF."
+      "current_sha256": "D2346531AE4D61F1CE93E477EC7E062C7A9620D7FBB89C087618CC39FF819403",
+      "reason": "Alteração cirúrgica aprovada: gráfico mensal por categoria horizontal usando toda a área útil A4, com quatro séries distinguíveis e todos os valores em rótulos visíveis no PDF."
+    },
+    "app/services/normalizer.py": {
+      "desktop_2_0_2_sha256": "10032A0661454808C0F1B082B63DA52B40427BD8E33A089BEF2AB447DFED6BA4",
+      "current_sha256": "B03EC10814918D2E23AB3FD8053D504C5F3701A88218DC3B15BFB89B12298B47",
+      "reason": "Correção de integridade: valores monetários ausentes deixam de ser convertidos silenciosamente em zero e interrompem deterministicamente a linha inválida."
+    },
+    "app/services/report_generator.py": {
+      "desktop_2_0_2_sha256": "00FA343E4C3118C4C935763D7B58913CE30FEE310C45504E0FFC7C8313FFA050",
+      "current_sha256": "3E98872252E2F2869E0BA66141E6998131CB1339D96F4139368F656692E62E93",
+      "reason": "Correção de consistência informativa: o relatório descreve a mesma precedência determinística efetivamente usada pelo reconciliador e explicita que conflitos permanecem não classificados."
     },
     "resources/base_dados_padrao.xlsx": {
       "desktop_2_0_2_sha256": "612CD84D04B1E01CB2CF1EDA829FACFA7F657135FE580466926DDB6301339A8B",

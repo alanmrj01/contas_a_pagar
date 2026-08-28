@@ -10,10 +10,10 @@ from typing import Any
 from app.services.base_manager import _write_base_xlsx
 from app.services.excel_reader import TableData, WorkbookData, read_excel
 from app.services.normalizer import find_column
-from app.services.reconciler import ReconcileResult, reconcile, validate_base
+from app.services.reconciler import ReconcileResult, normalize_supplier_code, reconcile, validate_base
 from app.services.report_generator import generate_report
 from app.services.sheet_detector import InputDetection, detect_base_table, detect_input_tables
-from app.services.text_utils import normalize_supplier
+from app.services.text_utils import normalize_text
 from app.services.validation_service import ValidatedInput
 
 from .report_optimizer import optimize_report_file
@@ -145,7 +145,7 @@ class WebEngine:
         c_cat = find_column(table, "Categoria")
         rows = [
             {
-                "supplier_code": str(row.get(c_code) or ""),
+                "supplier_code": self._code_key(row.get(c_code)),
                 "supplier": str(row.get(c_name) or ""),
                 "flow": str(row.get(c_flow) or ""),
                 "category": str(row.get(c_cat) or ""),
@@ -201,13 +201,13 @@ class WebEngine:
 
         current_items = self._base_items(self.active_base(sid).table)
         by_code = {self._code_key(item["supplier_code"]): item for item in current_items}
-        by_name = {normalize_supplier(item["supplier"]): item for item in current_items if normalize_supplier(item["supplier"])}
+        by_name = {normalize_text(item["supplier"]): item for item in current_items if normalize_text(item["supplier"])}
         conflicts: list[dict[str, Any]] = []
         additions: list[dict[str, str]] = []
         conflict_indexes: set[int] = set()
         for index, item in enumerate(imported_items):
             code = self._code_key(item["supplier_code"])
-            name_key = normalize_supplier(item["supplier"])
+            name_key = normalize_text(item["supplier"])
             current = by_code.get(code) or by_name.get(name_key)
             if current is not None:
                 reason = "Mesmo Cód Fornecedor" if code in by_code else "Mesmo Fornecedor"
@@ -302,13 +302,7 @@ class WebEngine:
     @staticmethod
     def _code_key(value: Any) -> str:
         """Normaliza código de fornecedor sem inferir ou aproximar seu conteúdo."""
-        if value in (None, ""):
-            return ""
-        try:
-            number = float(value)
-            return str(int(number)) if number.is_integer() else str(value).strip()
-        except Exception:
-            return str(value).strip()
+        return normalize_supplier_code(value)
 
     @classmethod
     def _supplement_base_from_imported_workbooks(
@@ -344,6 +338,7 @@ class WebEngine:
                 "affected_records": 0,
                 "conflicting_suppliers": 0,
                 "conflicts": [],
+                "conflicting_codes": [],
             }
 
         existing_codes = {
@@ -415,7 +410,7 @@ class WebEngine:
             # Preferência determinística: maior frequência; empate -> nome mais
             # completo; novo empate -> ordem alfabética normalizada.
             names = list(bucket["names"].items())
-            names.sort(key=lambda item: (-item[1], -len(item[0]), normalize_supplier(item[0])))
+            names.sort(key=lambda item: (-item[1], -len(item[0]), normalize_text(item[0])))
             name = names[0][0]
 
             source = dict(bucket["first_source"] or {})
@@ -433,6 +428,7 @@ class WebEngine:
                 "affected_records": 0,
                 "conflicting_suppliers": len(conflicts),
                 "conflicts": conflicts,
+                "conflicting_codes": [item["supplier_code"] for item in conflicts],
             }
 
         augmented = TableData(
@@ -452,6 +448,7 @@ class WebEngine:
             "affected_records": sum(int(affected_records[c]) for c in added_codes),
             "conflicting_suppliers": len(conflicts),
             "conflicts": conflicts,
+            "conflicting_codes": [item["supplier_code"] for item in conflicts],
         }
 
     def validate(self, sid: str, paths: list[Path]) -> ValidatedInput:
@@ -479,7 +476,12 @@ class WebEngine:
         # contamina sessões de outros usuários.
         base = self.active_base(sid).table
         base_for_run, enrichment = self._supplement_base_from_imported_workbooks(base, workbooks)
-        result: ReconcileResult = reconcile(detection.previsto, detection.realizado, base_for_run)
+        result: ReconcileResult = reconcile(
+            detection.previsto,
+            detection.realizado,
+            base_for_run,
+            blocked_import_classification_codes=set(enrichment["conflicting_codes"]),
+        )
 
         # O detector legado tinha uma observação de que Fluxo JMM/Categoria do
         # consolidado eram ignorados. No Web atual, esses campos continuam sem

@@ -36,7 +36,7 @@ def generate_report(result: ReconcileResult, output_dir: str | Path, source_name
             "variancePct": "Cálculo do indicador: (total Realizado - total Previsto) dividido pelo total Previsto, multiplicado por 100. Quando o total Previsto é zero, a variação percentual não é calculada.",
             "suppliers": "Quantidade de chaves canônicas de fornecedor. A chave determinística principal é o campo exato 'Cód Fornecedor' da BASE DADOS; o nome normalizado exato e inequívoco é usado somente como fallback controlado.",
             "punctuality": "Compara o campo exato 'Ult. Pgto.' (Último Pagamento) com o campo exato 'Vencimento'. Antecipado: pagamento anterior ao vencimento; Dentro do Prazo: pagamento na data do vencimento; Atrasado: pagamento posterior ao vencimento. Registros sem as duas datas válidas ficam fora da taxa.",
-            "classification": "Classificação determinística pela BASE DADOS fixa: código exato; fallback somente por nome normalizado exato e inequívoco. Similaridade é apenas sugestão e nunca altera indicadores.",
+            "classification": "Classificação determinística: código exato da BASE DADOS; nome normalizado exato e inequívoco da base; classificação completa da própria linha; ou histórico inequívoco do mesmo código no arquivo. Conflitos permanecem como Não classificado.",
         },
     }
     template_path = Path(__file__).resolve().parent.parent / "report" / "report_template.html"

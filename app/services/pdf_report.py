@@ -152,18 +152,53 @@ def _kpi(c: canvas.Canvas, x, y, w, h, label, value, note):
     _text_fit(c, x + 10, y + 9, note, max_width=w - 20, start_size=6.8, min_size=5.5, color=MUTED)
 
 
+def _category_month_rows(previsto, realizado):
+    months = sorted({
+        str(item.get("date"))[:7]
+        for item in [*previsto, *realizado]
+        if len(str(item.get("date") or "")) >= 7
+    })[-2:]
+    if not months:
+        return [], []
+    totals: dict[str, dict[tuple[str, str], float]] = {}
+    for side, items in (("P", previsto), ("R", realizado)):
+        for item in items:
+            month = str(item.get("date") or "")[:7]
+            if month not in months:
+                continue
+            category = str(item.get("category") or "Não classificado")
+            category_totals = totals.setdefault(category, {})
+            category_totals[(month, side)] = category_totals.get((month, side), 0.0) + float(item["value"])
+    labels = [f"{MONTHS_PT[int(month[5:7]) - 1]}/{month[2:4]}" for month in months]
+    rows = []
+    for category, values in totals.items():
+        series = []
+        for index, month in enumerate(months):
+            for mark, kind in (("P", "Previsto"), ("R", "Realizado")):
+                series.append({
+                    "label": f"{labels[index]} {mark}",
+                    "kind": kind,
+                    "mark": mark,
+                    "previous": len(months) > 1 and index == 0,
+                    "value": float(values.get((month, mark), 0.0)),
+                })
+        rows.append({"label": category, "series": series})
+    rows.sort(key=lambda row: max(abs(item["value"]) for item in row["series"]), reverse=True)
+    return rows, labels
+
+
 def _category_chart(c, x, y, w, h, rows):
     if not rows:
         _text(c, x, y + h / 2, "Sem dados", 10, MUTED)
         return
-    values = [float(row[key]) for row in rows for key in ("planned", "actual")]
+    values = [float(item["value"]) for row in rows for item in row["series"]]
     domain_min = min([0.0, *values])
     domain_max = max([0.0, *values])
     span = domain_max - domain_min or 1.0
-    left = x + 145
-    right = x + w - 92
-    bottom = y + 12
-    top = y + h - 30
+    left = x + 172
+    right = x + w - 96
+    bottom = y + 8
+    top = y + h - 34
     plot_w = right - left
     row_h = (top - bottom) / max(1, len(rows))
 
@@ -173,27 +208,27 @@ def _category_chart(c, x, y, w, h, rows):
     zero_x = xx(0.0)
 
     def value_bubble(endpoint: float, cy: float, label: str, positive: bool) -> None:
-        font_size = 5.8
-        bubble_w = min(88, max(52, pdfmetrics.stringWidth(label, "Helvetica-Bold", font_size) + 10))
+        font_size = 7.1
+        bubble_w = min(96, max(58, pdfmetrics.stringWidth(label, "Helvetica-Bold", font_size) + 12))
         desired = endpoint + 4 if positive else endpoint - bubble_w - 4
-        bx = max(x + 1, min(x + w - bubble_w - 1, desired))
+        bx = max(left + 2, min(x + w - bubble_w - 2, desired))
         c.setFillColor(white)
         c.setStrokeColor(HexColor("#69818F"))
         c.setLineWidth(.55)
-        c.roundRect(bx, cy - 5.5, bubble_w, 11, 3, fill=1, stroke=1)
+        c.roundRect(bx, cy - 6.5, bubble_w, 13, 3.5, fill=1, stroke=1)
         c.setFont("Helvetica-Bold", font_size)
         c.setFillColor(TEXT)
-        c.drawCentredString(bx + bubble_w / 2, cy - 2, label)
+        c.drawCentredString(bx + bubble_w / 2, cy - 2.5, label)
 
-    c.setFillColor(HexColor("#E7F3FA"))
+    c.setFillColor(HexColor("#F7FAFC"))
     c.setStrokeColor(ACCENT)
     c.setLineWidth(1.2)
-    c.roundRect(x + w - 178, y + h - 15, 12, 8, 2, fill=1, stroke=1)
-    _text(c, x + w - 161, y + h - 14, "Previsto (claro)", 6.2, MUTED, True)
+    c.roundRect(x + w - 208, y + h - 17, 14, 9, 2, fill=1, stroke=1)
+    _text(c, x + w - 189, y + h - 16, "P = Previsto", 7, MUTED, True)
     c.setFillColor(ACCENT)
     c.setStrokeColor(ACCENT)
-    c.roundRect(x + w - 80, y + h - 15, 12, 8, 2, fill=1, stroke=1)
-    _text(c, x + w - 63, y + h - 14, "Realizado", 6.2, MUTED, True)
+    c.roundRect(x + w - 98, y + h - 17, 14, 9, 2, fill=1, stroke=1)
+    _text(c, x + w - 79, y + h - 16, "R = Realizado", 7, MUTED, True)
 
     for i in range(6):
         value = domain_min + span * i / 5
@@ -201,32 +236,37 @@ def _category_chart(c, x, y, w, h, rows):
         c.setStrokeColor(LINE)
         c.setLineWidth(.7)
         c.line(x_tick, bottom, x_tick, top)
-        c.setFont("Helvetica", 5.8)
+        c.setFont("Helvetica", 6.5)
         c.setFillColor(MUTED)
         c.drawCentredString(x_tick, top + 8, short_brl(value))
 
     for i, row in enumerate(rows):
         color = PASTEL[i % len(PASTEL)]
         row_top = top - i * row_h
-        middle = row_top - row_h / 2
-        _text_fit(c, x + 1, middle - 2, row["label"], max_width=125, start_size=6.4, min_size=4.8, color=MUTED, bold=True)
-        for series_index, (key, mark, filled) in enumerate((("planned", "P", False), ("actual", "R", True))):
-            value = float(row[key])
-            cy = middle + (5.8 if series_index == 0 else -5.8)
+        series = row["series"]
+        inner_gap = max(9.5, min(14.0, (row_h - 16) / max(1, len(series))))
+        first_y = row_top - 17
+        _text_fit(c, x + 1, row_top - 7, row["label"], max_width=left - x - 8, start_size=8.2, min_size=6.2, color=TEXT, bold=True)
+        for series_index, item in enumerate(series):
+            value = float(item["value"])
+            cy = first_y - series_index * inner_gap
             endpoint = xx(value)
             bar_x = min(zero_x, endpoint)
             bar_w = max(1.0, abs(endpoint - zero_x))
+            filled = item["mark"] == "R"
             c.setFillColor(color if filled else HexColor("#F7FAFC"))
             c.setStrokeColor(color)
-            c.setLineWidth(1.1 if filled else 1.4)
-            c.roundRect(bar_x, cy - 3.7, bar_w, 7.4, 2.4, fill=1, stroke=1)
-            c.setFont("Helvetica-Bold", 5.6)
-            c.setFillColor(MUTED)
-            c.drawRightString(left - 5, cy - 2, mark)
+            c.setLineWidth(1.35 if filled else 1.8)
+            c.setDash(4, 2) if item["previous"] else c.setDash()
+            c.roundRect(bar_x, cy - 4.2, bar_w, 8.4, 2.6, fill=1, stroke=1)
+            c.setDash()
+            c.setFont("Helvetica-Bold", 7.1)
+            c.setFillColor(TEXT)
+            c.drawRightString(left - 7, cy - 2.5, item["label"])
             value_bubble(endpoint, cy, brl(value), value >= 0)
         c.setStrokeColor(color)
         c.setLineWidth(.35)
-        c.line(x + 1, row_top - row_h + 1, x + w - 1, row_top - row_h + 1)
+        c.line(x + 1, row_top - row_h + 2, x + w - 1, row_top - row_h + 2)
 
 
 def _line_chart(c, x, y, w, h, rows):
@@ -637,15 +677,16 @@ def generate_pdf(result: ReconcileResult, destination: str | Path) -> Path:
     # não são renderizados no PDF executivo.
     c.showPage()
 
-    category_rows = list(charts["categories"])
+    category_rows, category_months = _category_month_rows(result.previsto, result.realizado)
     category_chunks = [category_rows[index:index + 8] for index in range(0, len(category_rows), 8)] or [[]]
     for chunk_index, chunk in enumerate(category_chunks):
         page += 1
         w, h = _new_page(c, "Gráficos financeiros", result.period_label, page)
         suffix = f" ({chunk_index + 1}/{len(category_chunks)})" if len(category_chunks) > 1 else ""
         _text(c, 36, h - 98, f"1. Previsto x Realizado por categoria{suffix}", 10, BLUE, True)
-        _text(c, 36, h - 112, "Barras horizontais; todos os valores exatos aparecem em rótulos de alto contraste.", 6.8, MUTED)
-        _category_chart(c, 36, h - 625, w - 72, 480, chunk)
+        month_note = " x ".join(category_months) if category_months else "sem mês disponível"
+        _text(c, 18, h - 112, f"Barras horizontais ({month_note}); todos os valores exatos aparecem em rótulos de alto contraste.", 7.2, MUTED)
+        _category_chart(c, 18, 48, w - 36, h - 178, chunk)
         c.showPage()
 
     page += 1

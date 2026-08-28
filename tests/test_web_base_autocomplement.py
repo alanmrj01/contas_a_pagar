@@ -86,5 +86,5 @@ def test_conflito_de_fluxo_ou_categoria_nao_e_classificado_automaticamente():
 def test_frontend_nao_recomenda_mais_atualizacao_manual_da_base():
     js = (Path(__file__).parents[1] / "webapp" / "static" / "app.js").read_text(encoding="utf-8")
     assert "Atualização da Base de Dados recomendada" not in js
-    assert "Classificação incompleta após complemento automático" in js
-    assert "complementado(s) automaticamente pela planilha" in js
+    assert "Algumas classificações continuam incompletas." in js
+    assert "complementado(s) com dados completos da planilha" in js
