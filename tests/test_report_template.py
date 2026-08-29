@@ -165,11 +165,17 @@ def test_light_warning_subtitle_has_dedicated_contrast_and_larger_font():
     assert 'body[data-theme="light"] .warningsHeader span,body:not([data-theme]) .warningsHeader span{color:#102536!important;font-size:13px!important;font-weight:700!important}' in TEMPLATE
 
 
-def test_supplier_lollipop_values_are_slightly_larger_only_on_value_labels():
-    assert '.supplierValueLab{font-size:14px!important;font-weight:850!important}' in TEMPLATE
+def test_supplier_lollipop_names_and_values_are_larger_without_text_scaling():
+    assert '.supplierNameLab{font-size:13px!important;font-weight:750!important;text-rendering:geometricPrecision}' in TEMPLATE
+    assert '.supplierValueLab{font-size:15px!important;font-weight:900!important;text-rendering:geometricPrecision}' in TEMPLATE
+    assert 'class="lab supplierNameLab"' in TEMPLATE
     assert 'class="valueLab supplierValueLab"' in TEMPLATE
-    assert 'c.setFont("Helvetica-Bold", 7.0)' in PDF_SOURCE
-    assert 'value_w = 82' in PDF_SOURCE
+    assert "nameLines=splitSvgLabel(x.supplier,34,3)" in TEMPLATE
+    assert 'x.supplier.slice(0,29)' not in TEMPLATE
+    assert 'label_w = 270' in PDF_SOURCE
+    assert 'value_w = 96' in PDF_SOURCE
+    assert 'start_size=7.8, min_size=6.8' in PDF_SOURCE
+    assert 'c.setFont("Helvetica-Bold", 8.2)' in PDF_SOURCE
 
 
 def test_top_punctuality_kpi_is_removed_but_audit_data_can_remain_elsewhere():
@@ -212,21 +218,35 @@ def test_category_chart_is_horizontal_keeps_every_value_label_and_has_own_series
     assert 'categoryScreenVisibleIndices(values,slot)' not in TEMPLATE.split('function categoryBarsHorizontal', 1)[1].split('const MONTHS_PT', 1)[0]
 
 
-def test_category_chart_uses_pastel_fill_with_distinct_side_and_month_borders_and_print_space():
+def test_category_chart_uses_exactly_four_fixed_solid_pastel_series_colors_and_print_space():
     assert '.categoryBar{fill:var(--category-fill);stroke:var(--category-stroke);fill-opacity:1' in TEMPLATE
     assert '.categoryBar--planned{stroke-width:3.2}' in TEMPLATE
     assert '.categoryBar--actual{stroke-width:1.4}' in TEMPLATE
     category_css = TEMPLATE.split('.categoryBar{', 1)[1].split('.categoryBar:hover', 1)[0]
     assert 'stroke-dasharray' not in category_css
-    assert "monthFamilies=['#68AFC2','#D29A7C']" in TEMPLATE
-    assert "fill:mixHexColor(base,'#ffffff',.50)" in TEMPLATE
-    assert "fill:mixHexColor(base,'#000000',.04)" in TEMPLATE
+    assert "planned:{fill:'#B9DCED',stroke:'#315F78'}" in TEMPLATE
+    assert "actual:{fill:'#68AFC2',stroke:'#3E7088'}" in TEMPLATE
+    assert "planned:{fill:'#F3CCBA',stroke:'#8D5B47'}" in TEMPLATE
+    assert "actual:{fill:'#D98F73',stroke:'#8D4E3B'}" in TEMPLATE
+    assert 'categorySeriesColors(color,info)' not in TEMPLATE
+    assert "labels.flatMap(label=>legendMarks.map(mark=>`${label} ${mark}`))" in TEMPLATE
     assert 'monthIndex:index' in TEMPLATE
     assert 'categoryBar--${sideClass} categoryBar--${info.periodClass}' in TEMPLATE
     assert 'class="card cardWide categoryChartCard"' in TEMPLATE
     assert '.categoryChartCard #chartCategory svg{width:100%!important;height:auto!important;max-height:none!important' in TEMPLATE
     assert 'font_size = 7.6' in PDF_SOURCE
     assert '.categoryBarValue{font-size:11.5px!important}' in TEMPLATE
+    assert 'def _category_series_colors(item: dict):' in PDF_SOURCE
+    assert 'legend_items = rows[0]["series"]' in PDF_SOURCE
+
+
+def test_monthly_comparison_numeric_labels_are_larger_and_not_scaled_horizontally():
+    assert '.monthlyComparisonValue{fill:#102536;font-size:11.25px;font-weight:900;text-rendering:geometricPrecision}' in TEMPLATE
+    monthly_fn = TEMPLATE.split('function monthlyComparisonChart(p,r)', 1)[1].split('function buildTimelineFilters', 1)[0]
+    assert 'scaleX' not in monthly_fn
+    assert 'text.length*6.8+18' in monthly_fn
+    assert 'font_size = 7.2' in PDF_SOURCE
+    assert 'label_w = min(82, max(54' in PDF_SOURCE
 
 
 def test_supplier_period_context_and_waterfall_high_contrast_labels_are_present():

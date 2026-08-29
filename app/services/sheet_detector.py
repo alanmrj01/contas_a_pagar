@@ -5,7 +5,7 @@ from typing import Any
 
 from .excel_reader import TableData, WorkbookData, combine_tables
 from .text_utils import normalize_text
-from .normalizer import find_column, to_float, ValueParseError
+from .normalizer import find_column, to_date, to_float, ValueParseError
 
 
 @dataclass
@@ -103,9 +103,76 @@ def _is_consolidated_fc(table: TableData) -> bool:
     return _has_all(table, required) and _consolidated_value_columns(table) is not None
 
 
+def _has_value(value: Any) -> bool:
+    return value is not None and (not isinstance(value, str) or bool(value.strip()))
+
+
+def _consolidated_content_role(table: TableData) -> str:
+    """Distingue fonte financeira de tabela auxiliar com os mesmos cabeçalhos.
+
+    A classificação é conservadora: somente uma tabela com pelo menos três
+    registros reconhecidos, predominância inequívoca de código/nome cadastral e
+    nenhuma linha com intenção transacional é ignorada como auxiliar. Qualquer
+    linha completa ou com ao menos dois sinais transacionais (Título, Data e
+    valor da série indicada por Situação FC) mantém a tabela no fluxo financeiro,
+    onde valores inválidos continuam bloqueando normalmente a reconciliação.
+    """
+    value_columns = _consolidated_value_columns(table)
+    if value_columns is None:
+        return "consolidado"
+
+    _, c_prev, c_real = value_columns
+    c_title = find_column(table, "Título", "Titulo")
+    c_code = find_column(table, "Cód Fornecedor", "Codigo Fornecedor")
+    c_name = find_column(table, "Fornecedor")
+    c_date = find_column(table, "Data")
+    c_status = find_column(table, "Situação FC", "Situacao FC", "Situação", "Situacao")
+    assert all((c_title, c_code, c_name, c_date, c_status))
+
+    recognized = 0
+    masterdata_rows = 0
+    transaction_intent_rows = 0
+    complete_rows = 0
+
+    for row in table.rows:
+        status = normalize_text(row.get(c_status))
+        if status not in {"PREVISTO", "REALIZADO"}:
+            continue
+        recognized += 1
+        if _has_value(row.get(c_code)) and _has_value(row.get(c_name)):
+            masterdata_rows += 1
+
+        raw_title = row.get(c_title)
+        raw_date = row.get(c_date)
+        raw_value = row.get(c_prev if status == "PREVISTO" else c_real)
+        signals = sum(_has_value(value) for value in (raw_title, raw_date, raw_value))
+        if signals >= 2:
+            transaction_intent_rows += 1
+
+        try:
+            to_float(raw_value, field="valor financeiro")
+            value_valid = True
+        except ValueParseError:
+            value_valid = False
+        identity_present = _has_value(raw_title) or (
+            _has_value(row.get(c_code)) and _has_value(row.get(c_name))
+        )
+        if identity_present and to_date(raw_date) is not None and value_valid:
+            complete_rows += 1
+
+    if (
+        recognized >= 3
+        and complete_rows == 0
+        and transaction_intent_rows == 0
+        and masterdata_rows / recognized >= 0.80
+    ):
+        return "auxiliar"
+    return "consolidado"
+
+
 def table_role(table: TableData) -> str | None:
     if _is_consolidated_fc(table):
-        return "consolidado"
+        return _consolidated_content_role(table)
     p = _score(table, EXPECTED["previsto"])
     r = _score(table, EXPECTED["realizado"])
     b = _score(table, EXPECTED["base"])
@@ -314,6 +381,12 @@ def detect_input_tables(workbooks: list[WorkbookData]) -> InputDetection:
                 if r.rows:
                     realizado.append(r)
                 notes.extend(format_notes)
+            elif role == "auxiliar":
+                ignored.append(table)
+                notes.append(
+                    f"A aba '{table.sheet_name}' possui cabeçalhos semelhantes ao layout financeiro, "
+                    "mas seu conteúdo é cadastral/auxiliar e não foi usado nos cálculos."
+                )
             elif role == "previsto":
                 previsto.append(_canonicalize(table, "previsto"))
             elif role == "realizado":

@@ -91,6 +91,21 @@ def _mix_color(color, target, ratio: float):
     )
 
 
+def _category_series_colors(item: dict):
+    families = (
+        {
+            "planned": (HexColor("#B9DCED"), HexColor("#315F78")),
+            "actual": (HexColor("#68AFC2"), HexColor("#3E7088")),
+        },
+        {
+            "planned": (HexColor("#F3CCBA"), HexColor("#8D5B47")),
+            "actual": (HexColor("#D98F73"), HexColor("#8D4E3B")),
+        },
+    )
+    family = families[min(int(item.get("month_index") or 0), len(families) - 1)]
+    return family["planned" if item.get("mark") == "P" else "actual"]
+
+
 def _text(c: canvas.Canvas, x: float, y: float, text: str, size: float = 9, color=TEXT, bold=False):
     c.setFillColor(color)
     c.setFont("Helvetica-Bold" if bold else "Helvetica", size)
@@ -229,16 +244,16 @@ def _category_chart(c, x, y, w, h, rows):
         c.setFillColor(TEXT)
         c.drawCentredString(bx + bubble_w / 2, cy - 2.65, label)
 
-    c.setFillColor(HexColor("#B9DCED"))
-    c.setStrokeColor(HexColor("#315F78"))
-    c.setLineWidth(2.0)
-    c.roundRect(x + w - 208, y + h - 17, 14, 9, 2, fill=1, stroke=1)
-    _text(c, x + w - 189, y + h - 16, "P = Previsto", 7, MUTED, True)
-    c.setFillColor(HexColor("#74ABC7"))
-    c.setStrokeColor(HexColor("#315F78"))
-    c.setLineWidth(.8)
-    c.roundRect(x + w - 98, y + h - 17, 14, 9, 2, fill=1, stroke=1)
-    _text(c, x + w - 79, y + h - 16, "R = Realizado", 7, MUTED, True)
+    legend_items = rows[0]["series"]
+    legend_slot = (w - 8) / max(1, len(legend_items))
+    for legend_index, item in enumerate(legend_items):
+        fill_color, stroke_color = _category_series_colors(item)
+        legend_x = x + 4 + legend_index * legend_slot
+        c.setFillColor(fill_color)
+        c.setStrokeColor(stroke_color)
+        c.setLineWidth(2.0 if item["mark"] == "P" else .85)
+        c.roundRect(legend_x, y + h - 17, 13, 9, 2, fill=1, stroke=1)
+        _text(c, legend_x + 17, y + h - 16, item["label"], 6.5, MUTED, True)
 
     for i in range(6):
         value = domain_min + span * i / 5
@@ -264,11 +279,7 @@ def _category_chart(c, x, y, w, h, rows):
             bar_x = min(zero_x, endpoint)
             bar_w = max(1.0, abs(endpoint - zero_x))
             planned = item["mark"] == "P"
-            month_families = (HexColor("#68AFC2"), HexColor("#D29A7C"))
-            family = month_families[min(int(item.get("month_index") or 0), len(month_families) - 1)]
-            base_color = _mix_color(color, family, .70)
-            fill_color = _mix_color(base_color, white, .50) if planned else _mix_color(base_color, black, .04)
-            stroke_color = _mix_color(base_color, black, .55 if planned else .32)
+            fill_color, stroke_color = _category_series_colors(item)
             c.setFillColor(fill_color)
             c.setStrokeColor(stroke_color)
             c.setLineWidth(2.0 if planned else .85)
@@ -361,8 +372,8 @@ def _lollipop(c, x, y, w, h, rows):
         _text(c, x, y + h / 2, "Sem dados", 10, MUTED)
         return
     maxv = max(abs(r["variance"]) for r in rows) or 1
-    label_w = 150
-    value_w = 82
+    label_w = 270
+    value_w = 96
     plot_w = w - label_w - value_w
     rh = h / len(rows)
     zero = x + label_w + plot_w / 2
@@ -371,7 +382,10 @@ def _lollipop(c, x, y, w, h, rows):
     c.line(zero, y, zero, y + h)
     for i, row in enumerate(rows):
         yy = y + h - (i + .5) * rh
-        _text(c, x, yy - 3, str(row["supplier"])[:24], 6.6, MUTED)
+        _text_fit(
+            c, x, yy - 3, row["supplier"], max_width=label_w - 8,
+            start_size=7.8, min_size=6.8, color=MUTED, bold=True,
+        )
         dx = (plot_w / 2 - 10) * row["variance"] / maxv
         # Solicitação visual: positivo em verde; negativo em coral/vermelho.
         color = GOOD if row["variance"] >= 0 else BAD
@@ -381,7 +395,7 @@ def _lollipop(c, x, y, w, h, rows):
         c.setFillColor(color)
         c.circle(zero + dx, yy, 4.2, fill=1, stroke=0)
         label = brl(float(row["variance"]))
-        c.setFont("Helvetica-Bold", 7.0)
+        c.setFont("Helvetica-Bold", 8.2)
         c.setFillColor(color)
         c.drawRightString(x + w, yy - 2, label)
 
@@ -446,9 +460,9 @@ def _monthly_comparison_chart(c, x, y, w, h, rows):
             c.setLineWidth(1.2 if series_index == 0 else .7)
             c.roundRect(bar_x, bar_y, bar_w, bar_h, 2, fill=1, stroke=1)
             label = brl(value)
-            font_size = 6.2
-            label_w = min(72, max(48, pdfmetrics.stringWidth(label, "Helvetica-Bold", font_size) + 8))
-            preferred = bar_y + bar_h + 5 + series_index * 15 if value >= 0 else bar_y - 14 - series_index * 15
+            font_size = 7.2
+            label_w = min(82, max(54, pdfmetrics.stringWidth(label, "Helvetica-Bold", font_size) + 9))
+            preferred = bar_y + bar_h + 5 + series_index * 17 if value >= 0 else bar_y - 16 - series_index * 17
             label_y = max(y + 2, min(top + 7, preferred))
             value_labels.append((label, label_w, label_y, stroke, font_size))
         # As duas colunas precisam existir antes dos balões; assim nenhuma
@@ -457,10 +471,10 @@ def _monthly_comparison_chart(c, x, y, w, h, rows):
             c.setFillColor(white)
             c.setStrokeColor(stroke)
             c.setLineWidth(.45)
-            c.roundRect(center - label_w / 2, label_y, label_w, 12, 3, fill=1, stroke=1)
+            c.roundRect(center - label_w / 2, label_y, label_w, 14, 3, fill=1, stroke=1)
             c.setFillColor(TEXT)
             c.setFont("Helvetica-Bold", font_size)
-            c.drawCentredString(center, label_y + 3.6, label)
+            c.drawCentredString(center, label_y + 4.1, label)
         month = str(row["month"])
         label = f"{MONTHS_PT[int(month[5:7]) - 1]}/{month[2:4]}"
         _text(c, center - 11, y + 10, label, 6.2, MUTED, True)

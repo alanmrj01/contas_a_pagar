@@ -10,7 +10,7 @@ if "python_calamine" not in sys.modules:
 import pytest
 
 from app.services.excel_reader import TableData, WorkbookData
-from app.services.reconciler import reconcile
+from app.services.reconciler import ReconcileError, reconcile
 from app.services.sheet_detector import SheetDetectionError, detect_input_tables, table_role
 
 
@@ -100,3 +100,102 @@ def test_standard_separate_layout_remains_supported_without_regression():
     assert detection.previsto.rows[0]["Valor previsto"] == 100.0
     assert detection.realizado.rows[0]["Vlr.Original"] == 90.0
     assert detection.notes == []
+
+
+CONSOLIDATED_HEADERS = [
+    "Título", "Tipo", "Cód Fornecedor", "Fornecedor", "Data", "Previsto",
+    "Realizado", "Situação FC", "Mês", "Fluxo JMM", "Categoria",
+]
+
+
+def consolidated_row(row, status, code, title=None, date=None, planned=None, actual=None):
+    return src(row, **{
+        "Título": title,
+        "Cód Fornecedor": code,
+        "Fornecedor": f"FORNECEDOR {code}",
+        "Data": date,
+        "Previsto": planned,
+        "Realizado": actual,
+        "Situação FC": status,
+        "Fluxo JMM": "FLUXO",
+        "Categoria": "CATEGORIA",
+    })
+
+
+def auxiliary_table(name="CADASTRO AUXILIAR"):
+    return TableData(name, CONSOLIDATED_HEADERS, [
+        consolidated_row(2, "Previsto", 101),
+        consolidated_row(3, "Previsto", 102),
+        consolidated_row(4, "Previsto", 103),
+    ])
+
+
+def valid_consolidated_table(name="MOVIMENTOS"):
+    return TableData(name, CONSOLIDATED_HEADERS, [
+        consolidated_row(2, "Previsto", 101, "PREV-1", 46145, 100.0, None),
+        consolidated_row(3, "Realizado", 102, "REAL-1", 46146, None, -90.0),
+    ])
+
+
+def test_transactional_sheet_and_same_header_auxiliary_sheet_are_separated_by_content():
+    transactional = valid_consolidated_table()
+    auxiliary = auxiliary_table("BASE DE DADOS PREV")
+    wb = WorkbookData(path=None, tables=[transactional, auxiliary])  # type: ignore[arg-type]
+
+    assert table_role(transactional) == "consolidado"
+    assert table_role(auxiliary) == "auxiliar"
+    detection = detect_input_tables([wb])
+
+    assert len(detection.previsto.rows) == 1
+    assert len(detection.realizado.rows) == 1
+    assert detection.ignored_tables == [auxiliary]
+    assert any("cadastral/auxiliar" in note for note in detection.notes)
+
+
+def test_auxiliary_detection_does_not_depend_on_sheet_name():
+    auxiliary = auxiliary_table("MAPEAMENTO INTERNO 2027")
+    wb = WorkbookData(path=None, tables=[valid_consolidated_table(), auxiliary])  # type: ignore[arg-type]
+
+    detection = detect_input_tables([wb])
+
+    assert table_role(auxiliary) == "auxiliar"
+    assert auxiliary in detection.ignored_tables
+    assert len(detection.previsto.rows) == 1
+    assert len(detection.realizado.rows) == 1
+
+
+def test_two_valid_transactional_sheets_are_both_used():
+    planned = TableData("MOVIMENTOS PREV", CONSOLIDATED_HEADERS, [
+        consolidated_row(2, "Previsto", 101, "PREV-1", 46145, 100.0, None),
+    ])
+    actual = TableData("MOVIMENTOS REAL", CONSOLIDATED_HEADERS, [
+        consolidated_row(2, "Realizado", 102, "REAL-1", 46146, None, -90.0),
+    ])
+    wb = WorkbookData(path=None, tables=[planned, actual])  # type: ignore[arg-type]
+
+    detection = detect_input_tables([wb])
+
+    assert len(detection.previsto_tables) == 1
+    assert len(detection.realizado_tables) == 1
+    assert len(detection.previsto.rows) == 1
+    assert len(detection.realizado.rows) == 1
+
+
+def test_transactional_sheet_with_missing_financial_value_is_not_silenced():
+    invalid = TableData("MOVIMENTOS COM ERRO", CONSOLIDATED_HEADERS, [
+        consolidated_row(2, "Previsto", 101, "PREV-SEM-VALOR", 46145, None, None),
+    ])
+    actual = TableData("MOVIMENTOS REAL", CONSOLIDATED_HEADERS, [
+        consolidated_row(2, "Realizado", 102, "REAL-1", 46146, None, -90.0),
+    ])
+    base = TableData("BASE DADOS", ["Cód Fornecedor", "Fornecedor", "Fluxo JMM", "Categoria"], [
+        src(2, **{"Cód Fornecedor": 101, "Fornecedor": "FORNECEDOR 101", "Fluxo JMM": "FLUXO", "Categoria": "CATEGORIA"}),
+        src(3, **{"Cód Fornecedor": 102, "Fornecedor": "FORNECEDOR 102", "Fluxo JMM": "FLUXO", "Categoria": "CATEGORIA"}),
+    ])
+    wb = WorkbookData(path=None, tables=[invalid, actual])  # type: ignore[arg-type]
+
+    detection = detect_input_tables([wb])
+
+    assert table_role(invalid) == "consolidado"
+    with pytest.raises(ReconcileError, match="valor ausente"):
+        reconcile(detection.previsto, detection.realizado, base)
