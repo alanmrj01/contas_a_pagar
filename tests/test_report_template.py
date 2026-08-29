@@ -170,12 +170,19 @@ def test_supplier_lollipop_names_and_values_are_larger_without_text_scaling():
     assert '.supplierValueLab{font-size:15px!important;font-weight:900!important;text-rendering:geometricPrecision}' in TEMPLATE
     assert 'class="lab supplierNameLab"' in TEMPLATE
     assert 'class="valueLab supplierValueLab"' in TEMPLATE
-    assert "nameLines=splitSvgLabel(x.supplier,34,3)" in TEMPLATE
+    assert "nameLines:splitSvgLabel(row.supplier,34,3)" in TEMPLATE
     assert 'x.supplier.slice(0,29)' not in TEMPLATE
     assert 'label_w = 270' in PDF_SOURCE
     assert 'value_w = 96' in PDF_SOURCE
     assert 'start_size=7.8, min_size=6.8' in PDF_SOURCE
     assert 'c.setFont("Helvetica-Bold", 8.2)' in PDF_SOURCE
+    lollipop = TEMPLATE.split('function lollipop(rows)', 1)[1].split('function monthlyComparisonChart', 1)[0]
+    assert 'lineGap=19' in lollipop
+    assert 'rowHeights=prepared.map(item=>Math.max(39,item.nameLines.length*lineGap+9))' in lollipop
+    assert 'yy=cursor+rowHeight/2' in lollipop
+    assert 'cursor+=rowHeight' in lollipop
+    assert "host.style.height=`${Math.max(350,h)}px`" in lollipop
+    assert 'lineIndex*12' not in lollipop
 
 
 def test_top_punctuality_kpi_is_removed_but_audit_data_can_remain_elsewhere():
@@ -204,6 +211,26 @@ def test_category_chart_month_selection_obeys_zero_one_two_and_more_than_two_rul
     assert "categoryMonthLegend" in TEMPLATE
     assert "periodText=labels.join(' x ')" in TEMPLATE
     assert "comparisonMonths.forEach" in TEMPLATE
+
+
+def test_category_month_filter_is_local_and_uses_only_globally_available_months():
+    for token in (
+        'id="categoryMonthFilter"',
+        'id="categoryMonthFilterOptions"',
+        'id="clearCategoryMonthFilter"',
+        'state.categoryMonths',
+        'function buildCategoryMonthFilter()',
+    ):
+        assert token in TEMPLATE
+    available_fn = TEMPLATE.split('function categoryLocalAvailableMonths()', 1)[1].split('function updateCategoryMonthFilterLabel', 1)[0]
+    assert 'ALL_ITEMS.filter(pass)' in available_fn
+    resolver = TEMPLATE.split('function resolveCategoryComparisonMonths(items)', 1)[1].split('function spreadLabelYs', 1)[0]
+    assert 'if(state.categoryMonths.length)' in resolver
+    assert 'selectCategoryMonths(categoryLocalAvailableMonths(),state.categoryMonths)' in resolver
+    assert 'selectedEmissionMonthsForComparison(items)' in resolver
+    pass_fn = TEMPLATE.split('function pass(x)', 1)[1].split('function group', 1)[0]
+    assert 'categoryMonths' not in pass_fn
+    assert 'Mês do gráfico = ${periodText}' in TEMPLATE
 
 
 def test_category_chart_is_horizontal_keeps_every_value_label_and_has_own_series_filter():
@@ -442,9 +469,11 @@ def test_monthly_cards_have_isolated_series_filter():
 
 def test_local_chart_filters_do_not_trigger_full_report_render():
     category_handler = TEMPLATE.split("el('categorySeriesFilter').addEventListener", 1)[1].split('\n', 1)[0]
+    category_month_handlers = TEMPLATE.split('function buildCategoryMonthFilter()', 1)[1].split('\n', 1)[0]
     timeline_handlers = TEMPLATE.split('function buildTimelineFilters()', 1)[1].split('\n', 1)[0]
     monthly_handlers = TEMPLATE.split('function buildMonthFilter()', 1)[1].split('\n', 1)[0]
     assert 'renderCategoryLocal()' in category_handler and 'render()' not in category_handler
+    assert 'renderCategoryLocal()' in category_month_handlers and 'render()' not in category_month_handlers
     assert 'renderTimelineLocal()' in timeline_handlers and 'render()' not in timeline_handlers
     assert 'renderMonthlyCardsLocal()' in monthly_handlers and 'render()' not in monthly_handlers
     assert 'function currentFilteredRows()' in TEMPLATE

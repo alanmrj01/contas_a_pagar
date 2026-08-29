@@ -28,8 +28,8 @@
     },
     "app/report/report_template.html": {
       "desktop_2_0_2_sha256": "EE17F692ED1B48D4BE03F2A5B20B22940674844F4805C2B84990552A40FD720B",
-      "current_sha256": "DBEBF8DADBF147BE4BBDCB0E05D822F7385321305DED823C306A9495A84294AF",
-      "reason": "Alterações cirúrgicas aprovadas no relatório: gráfico por categoria horizontal com filtro Previsto/Realizado, regra exata de 0/1/2/>2 meses, quatro cores fixas pastéis e sólidas por mês/tipo com bordas distintas sem tracejado, rótulos mensais e de fornecedores ampliados sem scaleX, exportações filtradas no backend, edição compartilhada da Base de Dados com seleção pela linha, planilhas complementares, atualização integral e saída segura da sessão. O motor financeiro permanece inalterado."
+      "current_sha256": "607B6C5322003EF6ED991721BE9C9F70263BA0671B880586FCC5AA98E06AEAF5",
+      "reason": "Alterações cirúrgicas aprovadas no relatório: gráfico por categoria horizontal com filtros locais independentes de mês e Previsto/Realizado, regra exata de 0/1/2/>2 meses, quatro cores fixas pastéis e sólidas por mês/tipo com bordas distintas sem tracejado, rótulos mensais ampliados sem scaleX e espaçamento vertical dinâmico para nomes de fornecedores com uma, duas ou três linhas, exportações filtradas no backend, edição compartilhada da Base de Dados com seleção pela linha, planilhas complementares, atualização integral e saída segura da sessão. O motor financeiro permanece inalterado."
     },
     "app/services/excel_export.py": {
       "desktop_2_0_2_sha256": "96104948972EA7CF7E8D3E8A68EC59506DBC1A57D3944C66C7FA482F7CA98904",
