@@ -46,12 +46,19 @@ def load_main(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(module.supabase, "load_base", lambda user_id: persisted.get(user_id))
 
-    def save_base(user_id, items):
+    def save_base(user_id, items, *, expected_revision):
         revision = f"teste-{len(items)}"
         persisted[user_id] = ([dict(item) for item in items], revision)
         return revision
 
+    def restore_base(user_id, previous_items, *, previous_revision, expected_revision):
+        if previous_items is None:
+            persisted.pop(user_id, None)
+        else:
+            persisted[user_id] = ([dict(item) for item in previous_items], previous_revision)
+
     monkeypatch.setattr(module.supabase, "save_base", save_base)
+    monkeypatch.setattr(module.supabase, "restore_base", restore_base)
     module._test_persisted_bases = persisted
     return module
 
@@ -60,6 +67,12 @@ def csrf(client):
     boot = client.get("/api/security/bootstrap")
     assert boot.status_code == 200
     return boot.json()["csrf_token"]
+
+
+def base_revision(client):
+    response = client.get("/api/base")
+    assert response.status_code == 200, response.text
+    return response.json()["revision"]
 
 
 def login(client):
@@ -654,7 +667,7 @@ def test_imported_base_updates_site_backend_state_and_revalidation(tmp_path, mon
     imported = client.post(
         "/api/base/import",
         headers={"X-CSRF-Token": csrf(client)},
-        json={"upload_id": base_upload, "mode": "replace"},
+        json={"upload_id": base_upload, "mode": "replace", "revision": base_revision(client)},
     )
     assert imported.status_code == 200, imported.text
     info = imported.json()["base"]
@@ -693,7 +706,7 @@ def test_invalid_base_import_preserves_the_previous_effective_state(tmp_path, mo
     imported = client.post(
         "/api/base/import",
         headers={"X-CSRF-Token": csrf(client)},
-        json={"upload_id": upload_id, "mode": "replace"},
+        json={"upload_id": upload_id, "mode": "replace", "revision": before["revision"]},
     )
     assert imported.status_code == 400
     assert "base anterior foi preservada" in imported.json()["detail"].lower()
@@ -707,7 +720,8 @@ def test_manual_base_addition_and_removal_persist_for_later_session(tmp_path, mo
     client = TestClient(main.app)
     login(client)
 
-    original = client.get("/api/base").json()["items"]
+    original_base = client.get("/api/base").json()
+    original = original_base["items"]
     added = {
         "supplier_code": "CODEX-T2-99001",
         "supplier": "FORNECEDOR MANUAL TAREFA 2",
@@ -718,7 +732,7 @@ def test_manual_base_addition_and_removal_persist_for_later_session(tmp_path, mo
     response = client.put(
         "/api/base",
         headers={"X-CSRF-Token": csrf(client)},
-        json={"items": with_added},
+        json={"items": with_added, "revision": original_base["revision"]},
     )
     assert response.status_code == 200, response.text
     assert response.json()["base"]["rows"] == len(with_added)
@@ -728,7 +742,7 @@ def test_manual_base_addition_and_removal_persist_for_later_session(tmp_path, mo
     response = client.put(
         "/api/base",
         headers={"X-CSRF-Token": csrf(client)},
-        json={"items": after_removal},
+        json={"items": after_removal, "revision": response.json()["base"]["revision"]},
     )
     assert response.status_code == 200, response.text
 
@@ -758,7 +772,7 @@ def test_initial_and_report_base_edits_share_the_same_effective_base_through_exp
     updated = client.put(
         "/api/base",
         headers={"X-CSRF-Token": csrf(client)},
-        json={"items": base_items},
+        json={"items": base_items, "revision": base_revision(client)},
     )
     assert updated.status_code == 200, updated.text
 
@@ -787,12 +801,16 @@ def test_initial_and_report_base_edits_share_the_same_effective_base_through_exp
     classified = client.post(
         "/api/base/classifications",
         headers={"X-CSRF-Token": csrf(client)},
-        json={"assignments": [{
-            "supplier_code": "777",
-            "supplier": "FORNECEDOR AUDITADO",
-            "flow": "FLUXO EDITADO",
-            "category": "CATEGORIA EDITADA",
-        }]},
+        json={
+            "revision": updated.json()["base"]["revision"],
+            "assignments": [{
+                "supplier_code": "777",
+                "supplier": "FORNECEDOR AUDITADO",
+                "flow": "FLUXO EDITADO",
+                "category": "CATEGORIA EDITADA",
+                "subcategory": "",
+            }],
+        },
     )
     assert classified.status_code == 200, classified.text
     current = client.get("/api/base").json()
@@ -845,7 +863,7 @@ def test_append_base_requires_explicit_resolution_for_similar_rows(tmp_path, mon
     conflict = client.post(
         "/api/base/import",
         headers={"X-CSRF-Token": csrf(client)},
-        json={"upload_id": upload_id, "mode": "append"},
+        json={"upload_id": upload_id, "mode": "append", "revision": base_revision(client)},
     )
     assert conflict.status_code == 200, conflict.text
     payload = conflict.json()
@@ -859,6 +877,7 @@ def test_append_base_requires_explicit_resolution_for_similar_rows(tmp_path, mon
         json={
             "upload_id": upload_id,
             "mode": "append",
+            "revision": base_revision(client),
             "duplicate_action": "edit",
             "edited_duplicates": [{
                 "row_index": 0,
@@ -872,3 +891,83 @@ def test_append_base_requires_explicit_resolution_for_similar_rows(tmp_path, mon
     assert resolved.status_code == 200, resolved.text
     assert resolved.json()["added"] == 2
     assert resolved.json()["ignored"] == 0
+
+
+def test_manual_financial_correction_rejects_ambiguity_then_recalculates_exact_origin(tmp_path, monkeypatch):
+    import xlsxwriter
+
+    main = load_main(tmp_path, monkeypatch)
+    client = TestClient(main.app)
+    login(client)
+
+    financial_path = tmp_path / "correcao_manual.xlsx"
+    workbook = xlsxwriter.Workbook(financial_path)
+    planned = workbook.add_worksheet("PREVISTO")
+    planned.write_row(0, 0, [
+        "Título Previsto", "Cód Fornecedor", "Fornecedor", "Data prevista", "Valor previsto",
+        "Fluxo JMM", "Categoria", "Subcategoria",
+    ])
+    planned.write_row(1, 0, [
+        "P-CORR", "SURG-1", "FORNECEDOR CIRÚRGICO", "15/07/2026", "1,234",
+        "FLUXO CIRÚRGICO", "CATEGORIA CIRÚRGICA", "TI",
+    ])
+    actual = workbook.add_worksheet("REALIZADO")
+    actual.write_row(0, 0, [
+        "Título", "Fornecedor", "Nome Fornecedor", "Vlr.Original", "Ult. Pgto.", "Vencimento",
+        "Fluxo JMM", "Categoria", "Subcategoria",
+    ])
+    actual.write_row(1, 0, [
+        "R-CORR", "SURG-1", "FORNECEDOR CIRÚRGICO", 80, "15/07/2026", "15/07/2026",
+        "FLUXO CIRÚRGICO", "CATEGORIA CIRÚRGICA", "TI",
+    ])
+    workbook.close()
+
+    upload_id = stage_file(client, financial_path)
+    validated = client.post(
+        "/api/validate",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={"upload_ids": [upload_id]},
+    )
+    assert validated.status_code == 200, validated.text
+    assert validated.json()["summary"]["previsto"] == 0
+    assert any(item["title"] == "Valores inválidos no PREVISTO" for item in validated.json()["summary"]["warnings"])
+    generated = client.post("/api/generate", headers={"X-CSRF-Token": csrf(client)})
+    assert generated.status_code == 200, generated.text
+
+    origin = {
+        "source_file": financial_path.name,
+        "source_sheet": "PREVISTO",
+        "source_row": 2,
+        "field": "Valor previsto",
+    }
+    rejected = client.post(
+        "/api/base/classifications",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={
+            "revision": base_revision(client),
+            "corrections": [{**origin, "value": "1,234"}],
+        },
+    )
+    assert rejected.status_code == 400
+    assert "ambíguo" in rejected.json()["detail"]
+    state = next(state for state in main.store._states.values() if state.validated is not None)
+    assert state.validated.result.previsto == []
+
+    corrected = client.post(
+        "/api/base/classifications",
+        headers={"X-CSRF-Token": csrf(client)},
+        json={
+            "revision": base_revision(client),
+            "corrections": [{**origin, "value": "R$ 1.234,56"}],
+        },
+    )
+    assert corrected.status_code == 200, corrected.text
+    assert corrected.json()["summary"]["previsto"] == 1
+    planned_row = state.validated.result.previsto[0]
+    assert planned_row["value"] == 1234.56
+    assert planned_row["subcategory"] == "TI"
+    assert (planned_row["source_file"], planned_row["source_sheet"], planned_row["source_row"]) == (
+        financial_path.name,
+        "PREVISTO",
+        2,
+    )

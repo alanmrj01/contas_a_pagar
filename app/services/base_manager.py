@@ -58,7 +58,7 @@ def _write_base_xlsx(table: TableData, destination: Path) -> None:
     ws = wb.add_worksheet("BASE DADOS")
     header = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#234865", "align": "center", "valign": "vcenter"})
     normal = wb.add_format({"valign": "top"})
-    cols = ["Cód Fornecedor", "Fornecedor", "Fluxo JMM", "Categoria"]
+    cols = ["Cód Fornecedor", "Fornecedor", "Fluxo JMM", "Categoria", "Subcategoria"]
     # Resolve as colunas pelos nomes do arquivo recebido.
     from .normalizer import find_column
     mapping = [
@@ -66,6 +66,7 @@ def _write_base_xlsx(table: TableData, destination: Path) -> None:
         find_column(table, "Fornecedor"),
         find_column(table, "Fluxo JMM", "Fluxo"),
         find_column(table, "Categoria"),
+        find_column(table, "Subcategoria"),
     ]
     for c, title in enumerate(cols):
         ws.write(0, c, title, header)
@@ -73,11 +74,12 @@ def _write_base_xlsx(table: TableData, destination: Path) -> None:
         for c, key in enumerate(mapping):
             ws.write(r, c, row.get(key) if key else "", normal)
     ws.freeze_panes(1, 0)
-    ws.autofilter(0, 0, len(table.rows), 3)
+    ws.autofilter(0, 0, len(table.rows), 4)
     ws.set_column(0, 0, 16)
     ws.set_column(1, 1, 42)
     ws.set_column(2, 2, 26)
     ws.set_column(3, 3, 30)
+    ws.set_column(4, 4, 30)
     wb.close()
 
 

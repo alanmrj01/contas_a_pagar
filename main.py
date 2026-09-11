@@ -20,11 +20,12 @@ from pydantic import BaseModel, Field
 
 from app.services.excel_reader import SUPPORTED_EXTENSIONS
 from webapp.crypto_storage import decrypt_uploaded_chunks, iter_unseal_file, validate_office_container
-from webapp.engine import WebEngine
+from webapp.engine import BaseRollbackFailed, WebEngine
 from webapp.security import RuntimeSecurity, SlidingWindowLimiter, request_origin_is_allowed
 from webapp.session_store import SessionStore
 from webapp.supabase_gateway import (
     AuthenticationRejected,
+    BaseRevisionConflict,
     RecoveryCodeRejected,
     SupabaseGateway,
     SupabaseUnavailable,
@@ -263,6 +264,7 @@ class BaseRowPayload(BaseModel):
     supplier: str = Field(min_length=1, max_length=500)
     flow: str = Field(min_length=1, max_length=500)
     category: str = Field(min_length=1, max_length=500)
+    subcategory: str = Field(default="", max_length=500)
 
 
 class EditedDuplicatePayload(BaseRowPayload):
@@ -271,11 +273,15 @@ class EditedDuplicatePayload(BaseRowPayload):
 
 class BaseUpdateRequest(BaseModel):
     items: list[BaseRowPayload] = Field(min_length=1, max_length=500_000)
+    revision: str = Field(min_length=1, max_length=128)
+    refresh_report: bool = False
 
 
 class BaseImportRequest(BaseModel):
     upload_id: str = Field(min_length=32, max_length=32)
     mode: Literal["replace", "append"]
+    revision: str = Field(min_length=1, max_length=128)
+    refresh_report: bool = False
     duplicate_action: Literal["ask", "ignore", "edit"] = "ask"
     edited_duplicates: list[EditedDuplicatePayload] = Field(default_factory=list, max_length=100_000)
 
@@ -289,6 +295,7 @@ ReportFilterValue = Annotated[str, Field(max_length=500)]
 
 class ReportFilterState(BaseModel):
     category: list[ReportFilterValue] = Field(default_factory=list, max_length=2_000)
+    subcategory: list[ReportFilterValue] = Field(default_factory=list, max_length=2_000)
     flow: list[ReportFilterValue] = Field(default_factory=list, max_length=2_000)
     supplier: list[ReportFilterValue] = Field(default_factory=list, max_length=20_000)
     emission_mode: Literal["month", "date"] = "month"
@@ -305,8 +312,18 @@ class ClassificationAssignment(BaseRowPayload):
     pass
 
 
+class ManualValueCorrection(BaseModel):
+    source_file: str = Field(min_length=1, max_length=255)
+    source_sheet: str = Field(min_length=1, max_length=255)
+    source_row: int = Field(ge=1, le=10_000_000)
+    field: Literal["Valor previsto", "Vlr.Original", "Data prevista", "Emissão", "Ult. Pgto.", "Vencimento"]
+    value: str = Field(min_length=1, max_length=500)
+
+
 class ClassificationUpdateRequest(BaseModel):
-    assignments: list[ClassificationAssignment] = Field(min_length=1, max_length=100_000)
+    assignments: list[ClassificationAssignment] = Field(default_factory=list, max_length=100_000)
+    corrections: list[ManualValueCorrection] = Field(default_factory=list, max_length=100_000)
+    revision: str = Field(min_length=1, max_length=128)
 
 
 @app.get("/")
@@ -653,6 +670,29 @@ async def _materialize_financial_uploads(sid: str, upload_ids: list[str], work: 
     return materialized
 
 
+def _call_engine_locked(sid: str, operation, *args, **kwargs):
+    with store.lock(sid):
+        return operation(sid, *args, **kwargs)
+
+
+async def _materialize_current_report_sources(sid: str, work: Path) -> list[Path]:
+    upload_ids = list(store.state(sid).financial_upload_ids)
+    if not upload_ids:
+        raise RuntimeError("Não há planilhas financeiras protegidas nesta sessão para atualizar o relatório.")
+    return await _materialize_financial_uploads(sid, upload_ids, work)
+
+
+def _version_report_result(result: dict[str, Any]) -> dict[str, Any]:
+    if not result.get("report_url"):
+        return result
+    stamp = int(time.time())
+    return {
+        **result,
+        "report_url": f"{result['report_url']}?v={stamp}",
+        "pdf_url": f"{result['pdf_url']}?v={stamp}",
+    }
+
+
 async def _rebuild_report(sid: str, new_upload_ids: list[str] | None = None) -> dict[str, Any]:
     additions = list(dict.fromkeys(new_upload_ids or []))
     existing = list(store.state(sid).financial_upload_ids)
@@ -805,15 +845,20 @@ def _serve_report_artifact(request: Request, logical_name: str, *, force_inline:
 def api_base(request: Request):
     sid = _sid(request)
     try:
-        return engine.base_rows(sid)
+        with store.lock(sid):
+            engine.load_persistent_base(sid)
+            return engine.base_rows(sid)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=_safe_error(exc)) from exc
 
 
 @app.get("/api/base/options")
 def api_base_options(request: Request):
+    sid = _sid(request)
     try:
-        return engine.base_options(_sid(request))
+        with store.lock(sid):
+            engine.load_persistent_base(sid)
+            return engine.base_options(sid)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=_safe_error(exc)) from exc
 
@@ -821,20 +866,41 @@ def api_base_options(request: Request):
 @app.put("/api/base")
 async def api_base_update(request: Request, payload: BaseUpdateRequest):
     sid = _sid(request)
+    work: Path | None = None
     try:
         items = [item.model_dump() for item in payload.items]
+        report_paths = None
+        if payload.refresh_report:
+            work = store.new_work_dir(sid, "base_report_refresh")
+            report_paths = await _materialize_current_report_sources(sid, work)
         async with heavy_jobs:
-            with store.lock(sid):
-                info = await asyncio.to_thread(engine.update_base, sid, items)
-        return {"ok": True, "base": info}
+            result = await asyncio.to_thread(
+                _call_engine_locked,
+                sid,
+                engine.update_base,
+                items,
+                expected_revision=payload.revision,
+                report_paths=report_paths,
+            )
+        if payload.refresh_report:
+            return {"ok": True, **_version_report_result(result)}
+        return {"ok": True, "base": result}
+    except BaseRevisionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except BaseRollbackFailed as exc:
+        raise HTTPException(status_code=500, detail=_safe_error(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"A base anterior foi preservada. {_safe_error(exc)}") from exc
+    finally:
+        if work is not None:
+            shutil.rmtree(work, ignore_errors=True)
 
 
 @app.post("/api/base/import")
 async def api_base_import(request: Request, payload: BaseImportRequest):
     sid = _sid(request)
     work = store.new_work_dir(sid, "base_import")
+    report_work: Path | None = None
     completed = False
     try:
         record = store.upload_record(sid, payload.upload_id, purpose="base")
@@ -849,22 +915,34 @@ async def api_base_import(request: Request, payload: BaseImportRequest):
             max_file_bytes=store.max_upload_bytes,
             max_expanded_bytes=store.max_office_expanded_bytes,
         )
+        report_paths = None
+        if payload.refresh_report:
+            report_work = store.new_work_dir(sid, "base_import_report_refresh")
+            report_paths = await _materialize_current_report_sources(sid, report_work)
         async with heavy_jobs:
-            with store.lock(sid):
-                result = await asyncio.to_thread(
-                    engine.import_base,
-                    sid,
-                    dest,
-                    mode=payload.mode,
-                    duplicate_action=payload.duplicate_action,
-                    edited_duplicates=[item.model_dump() for item in payload.edited_duplicates],
-                )
+            result = await asyncio.to_thread(
+                _call_engine_locked,
+                sid,
+                engine.import_base,
+                dest,
+                mode=payload.mode,
+                expected_revision=payload.revision,
+                report_paths=report_paths,
+                duplicate_action=payload.duplicate_action,
+                edited_duplicates=[item.model_dump() for item in payload.edited_duplicates],
+            )
         completed = bool(result.get("ok"))
-        return result
+        return _version_report_result(result)
+    except BaseRevisionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except BaseRollbackFailed as exc:
+        raise HTTPException(status_code=500, detail=_safe_error(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"A base anterior foi preservada. {_safe_error(exc)}") from exc
     finally:
         shutil.rmtree(work, ignore_errors=True)
+        if report_work is not None:
+            shutil.rmtree(report_work, ignore_errors=True)
         if completed:
             store.discard_upload(sid, payload.upload_id)
 
@@ -872,15 +950,30 @@ async def api_base_import(request: Request, payload: BaseImportRequest):
 @app.post("/api/base/classifications")
 async def api_base_classifications(request: Request, payload: ClassificationUpdateRequest):
     sid = _sid(request)
+    work = store.new_work_dir(sid, "classification_report_refresh")
     try:
         assignments = [item.model_dump() for item in payload.assignments]
+        corrections = [item.model_dump() for item in payload.corrections]
+        report_paths = await _materialize_current_report_sources(sid, work)
         async with heavy_jobs:
-            with store.lock(sid):
-                base = await asyncio.to_thread(engine.apply_classifications, sid, assignments)
-        refreshed = await _rebuild_report(sid)
-        return {**refreshed, "base": base}
+            result = await asyncio.to_thread(
+                _call_engine_locked,
+                sid,
+                engine.apply_classifications,
+                assignments,
+                expected_revision=payload.revision,
+                report_paths=report_paths,
+                manual_corrections=corrections,
+            )
+        return {"ok": True, **_version_report_result(result)}
+    except BaseRevisionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except BaseRollbackFailed as exc:
+        raise HTTPException(status_code=500, detail=_safe_error(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"A base anterior e o relatório anterior foram preservados. {_safe_error(exc)}") from exc
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
 
 @app.get("/api/base/export")

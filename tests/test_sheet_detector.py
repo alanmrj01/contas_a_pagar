@@ -197,5 +197,17 @@ def test_transactional_sheet_with_missing_financial_value_is_not_silenced():
     detection = detect_input_tables([wb])
 
     assert table_role(invalid) == "consolidado"
-    with pytest.raises(ReconcileError, match="valor ausente"):
-        reconcile(detection.previsto, detection.realizado, base)
+    result = reconcile(detection.previsto, detection.realizado, base)
+    assert result.previsto == []
+    assert len(result.realizado) == 1
+    assert result.realizado[0]["value"] == 90.0
+    warning = next(item for item in result.warnings if item["title"] == "Valores inválidos no PREVISTO")
+    assert len(warning["details"]) == 1
+    detail = warning["details"][0]
+    assert detail["source_file"] == "cliente.xlsx"
+    assert detail["source_sheet"] == "Base de dados"
+    assert detail["source_row"] == 2
+    assert detail["field"] == "Valor previsto"
+    assert detail["value_kind"] == "number"
+    assert detail["raw_value"] == ""
+    assert detail["problem"] == "Valor previsto: valor ausente"

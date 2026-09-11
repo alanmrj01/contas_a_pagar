@@ -45,7 +45,7 @@ def test_one_action_key_moves_from_started_to_final_state_without_stacking():
 def test_main_base_flows_report_started_success_error_and_no_change():
     assert "actionFeedback.started('Salvando as alterações da Base de Dados...', 'base-save')" in APP_JS
     assert "actionFeedback.success(`Alterações salvas." in APP_JS
-    assert "actionFeedback.error('Não foi possível salvar as alterações" in APP_JS
+    assert "showBaseMutationError(error, 'base-save', 'Não foi possível salvar as alterações" in APP_JS
     assert "actionFeedback.started('Protegendo e importando a nova Base de Dados...', 'base-import')" in APP_JS
     assert "Arquivo importado com sucesso." in APP_JS
     assert "Nenhum novo registro precisava ser adicionado." in APP_JS
@@ -55,7 +55,7 @@ def test_main_base_flows_report_started_success_error_and_no_change():
 def test_report_reuses_loading_and_carries_completion_across_refresh():
     assert "function beginReportUpdate(" in REPORT
     assert "actionFeedback.next(message,'success');location.replace(url)" in REPORT
-    assert "Classificações atualizadas com sucesso." in REPORT
+    assert "Correções aplicadas e relatório atualizado com sucesso." in REPORT
     assert "Alterações salvas. O relatório foi atualizado." in REPORT
     assert "Arquivo complementar importado com sucesso." in REPORT
     assert "Base de Dados importada com sucesso." in REPORT

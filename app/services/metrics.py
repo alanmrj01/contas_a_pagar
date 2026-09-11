@@ -51,6 +51,7 @@ def aggregate_suppliers(previsto: list[dict[str, Any]], realizado: list[dict[str
             "supplier": item.get("supplier") or "Sem fornecedor",
             "supplier_code": item.get("supplier_code") or "",
             "category": item.get("category") or "Não classificado",
+            "subcategory": item.get("subcategory") or "",
             "flow": item.get("flow") or "Não classificado",
             "planned": 0.0,
             "actual": 0.0,
@@ -61,6 +62,8 @@ def aggregate_suppliers(previsto: list[dict[str, Any]], realizado: list[dict[str
         row["planned_records" if side == "planned" else "actual_records"] += 1
         if row["category"] == "Não classificado" and item.get("category"):
             row["category"] = item["category"]
+        if not row["subcategory"] and item.get("subcategory"):
+            row["subcategory"] = item["subcategory"]
         if row["flow"] == "Não classificado" and item.get("flow"):
             row["flow"] = item["flow"]
         if not row["supplier_code"] and item.get("supplier_code"):
@@ -93,67 +96,48 @@ def accumulated_by_date(previsto: list[dict[str, Any]], realizado: list[dict[str
     return out
 
 
+def least_squares_trend(values: list[float]) -> list[float]:
+    """Tendência linear OLS sobre posições cronológicas 0..n-1."""
 
-def monthly_supplier_category(previsto: list[dict[str, Any]], realizado: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Consolida mês + fornecedor + Fluxo JMM + Categoria com comparação mensal.
+    if not values:
+        return []
+    if len(values) == 1:
+        return [float(values[0])]
+    numeric = [float(value) for value in values]
+    x_mean = (len(numeric) - 1) / 2.0
+    y_mean = sum(numeric) / len(numeric)
+    denominator = sum((index - x_mean) ** 2 for index in range(len(numeric)))
+    slope = sum((index - x_mean) * (value - y_mean) for index, value in enumerate(numeric)) / denominator
+    intercept = y_mean - slope * x_mean
+    return [intercept + slope * index for index in range(len(numeric))]
 
-    Regras determinísticas:
-    - somente registros com data válida entram nesta visualização;
-    - Fluxo JMM e Categoria vêm da classificação já reconciliada com a BASE DADOS;
-    - a comparação é feita contra o mês-calendário imediatamente anterior para a
-      MESMA combinação fornecedor + fluxo + categoria;
-    - ausência da combinação no mês anterior é marcada como ``has_previous=False``
-      e nunca convertida silenciosamente em zero.
-    """
-    acc: dict[tuple[str, str, str, str], dict[str, Any]] = {}
 
-    def add(item: dict[str, Any], side: str) -> None:
-        raw_date = str(item.get("date") or "")
-        if len(raw_date) < 7:
-            return
-        month = raw_date[:7]
-        supplier_key = str(item.get("supplier_key") or item.get("supplier") or "SEM_FORNECEDOR")
-        supplier = str(item.get("supplier") or "Sem fornecedor")
-        flow = str(item.get("flow") or "Não classificado")
-        category = str(item.get("category") or "Não classificado")
-        key = (month, supplier_key, flow, category)
-        row = acc.setdefault(key, {
-            "month": month,
-            "supplier_key": supplier_key,
-            "supplier": supplier,
-            "flow": flow,
-            "category": category,
-            "planned": 0.0,
-            "actual": 0.0,
-        })
-        row[side] += float(item.get("value") or 0.0)
+def category_waterfall(previsto: list[dict[str, Any]], realizado: list[dict[str, Any]]) -> dict[str, Any]:
+    """Fecha Previsto + somatório(Realizado - Previsto por categoria) = Realizado."""
 
-    for item in previsto:
-        add(item, "planned")
-    for item in realizado:
-        add(item, "actual")
+    planned_by_category = group_values(previsto, "category")
+    actual_by_category = group_values(realizado, "category")
+    labels = set(planned_by_category) | set(actual_by_category)
+    steps = [
+        {
+            "label": label,
+            "planned": planned_by_category.get(label, 0.0),
+            "actual": actual_by_category.get(label, 0.0),
+            "contribution": actual_by_category.get(label, 0.0) - planned_by_category.get(label, 0.0),
+        }
+        for label in labels
+    ]
+    steps.sort(key=lambda row: (-max(abs(row["planned"]), abs(row["actual"])), row["label"].casefold()))
+    planned = _sum(previsto)
+    actual = _sum(realizado)
+    return {
+        "planned": planned,
+        "steps": steps,
+        "actual": actual,
+        "variance": actual - planned,
+    }
 
-    def previous_month(month: str) -> str:
-        year, mon = map(int, month.split("-"))
-        if mon == 1:
-            return f"{year-1:04d}-12"
-        return f"{year:04d}-{mon-1:02d}"
 
-    rows = list(acc.values())
-    index = {(r["month"], r["supplier_key"], r["flow"], r["category"]): r for r in rows}
-    for row in rows:
-        prev = index.get((previous_month(row["month"]), row["supplier_key"], row["flow"], row["category"]))
-        row["has_previous"] = prev is not None
-        row["previous_month"] = previous_month(row["month"])
-        row["previous_planned"] = float(prev["planned"]) if prev else None
-        row["previous_actual"] = float(prev["actual"]) if prev else None
-        row["planned_mom_delta"] = float(row["planned"]) - float(prev["planned"]) if prev else None
-        row["actual_mom_delta"] = float(row["actual"]) - float(prev["actual"]) if prev else None
-        row["planned_mom_pct"] = (row["planned_mom_delta"] / abs(float(prev["planned"])) * 100.0) if prev and float(prev["planned"]) != 0 else None
-        row["actual_mom_pct"] = (row["actual_mom_delta"] / abs(float(prev["actual"])) * 100.0) if prev and float(prev["actual"]) != 0 else None
-
-    rows.sort(key=lambda x: (x["month"], -max(abs(float(x["planned"])), abs(float(x["actual"]))), x["supplier"], x["flow"], x["category"]))
-    return rows
 
 def chart_data(previsto: list[dict[str, Any]], realizado: list[dict[str, Any]]) -> dict[str, Any]:
     cat_p, cat_r = group_values(previsto, "category"), group_values(realizado, "category")
@@ -176,6 +160,6 @@ def chart_data(previsto: list[dict[str, Any]], realizado: list[dict[str, Any]]) 
         "timeline": accumulated_by_date(previsto, realizado),
         "suppliers": aggregate_suppliers(previsto, realizado),
         "flows": flows,
-        "monthly_supplier_category": monthly_supplier_category(previsto, realizado),
+        "category_waterfall": category_waterfall(previsto, realizado),
         "punctuality": dict(punctuality),
     }

@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import posixpath
+import re
 from typing import Any, Iterable
+from xml.etree import ElementTree
+from zipfile import BadZipFile, ZipFile
 
 from python_calamine import CalamineWorkbook
 
@@ -28,6 +32,79 @@ class WorkbookData:
 
 class ExcelReadError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class UncalculatedFormula:
+    """Fórmula OOXML sem resultado armazenado pelo aplicativo que salvou o arquivo."""
+
+    expression: str
+
+    def __str__(self) -> str:
+        return self.expression
+
+
+_CELL_REF_RE = re.compile(r"^([A-Z]+)([1-9][0-9]*)$")
+_OOXML_MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+_OOXML_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+_PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
+
+
+def _column_index(reference: str) -> tuple[int, int] | None:
+    matched = _CELL_REF_RE.fullmatch(reference.upper())
+    if not matched:
+        return None
+    column = 0
+    for char in matched.group(1):
+        column = column * 26 + ord(char) - 64
+    return int(matched.group(2)) - 1, column - 1
+
+
+def _uncalculated_formula_cells(path: Path) -> dict[str, dict[tuple[int, int], UncalculatedFormula]]:
+    """Lê somente metadados OOXML necessários para não confundir fórmula sem cache com zero."""
+
+    if path.suffix.lower() not in {".xlsx", ".xlsm"}:
+        return {}
+    try:
+        with ZipFile(path) as archive:
+            workbook = ElementTree.fromstring(archive.read("xl/workbook.xml"))
+            relationships = ElementTree.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+            targets = {
+                rel.attrib.get("Id", ""): rel.attrib.get("Target", "")
+                for rel in relationships.findall(f"{{{_PACKAGE_REL_NS}}}Relationship")
+            }
+            formulas: dict[str, dict[tuple[int, int], UncalculatedFormula]] = {}
+            for sheet in workbook.findall(f".//{{{_OOXML_MAIN_NS}}}sheet"):
+                name = sheet.attrib.get("name", "")
+                relation_id = sheet.attrib.get(f"{{{_OOXML_REL_NS}}}id", "")
+                target = targets.get(relation_id, "")
+                if not name or not target:
+                    continue
+                worksheet_path = (
+                    posixpath.normpath(target.lstrip("/"))
+                    if target.startswith("/")
+                    else posixpath.normpath(posixpath.join("xl", target))
+                )
+                root = ElementTree.fromstring(archive.read(worksheet_path))
+                sheet_formulas: dict[tuple[int, int], UncalculatedFormula] = {}
+                for cell in root.findall(f".//{{{_OOXML_MAIN_NS}}}c"):
+                    formula = cell.find(f"{{{_OOXML_MAIN_NS}}}f")
+                    if formula is None:
+                        continue
+                    cached = cell.find(f"{{{_OOXML_MAIN_NS}}}v")
+                    if cached is not None and cached.text not in (None, ""):
+                        continue
+                    position = _column_index(cell.attrib.get("r", ""))
+                    if position is not None:
+                        expression = "=" + str(formula.text or "").strip()
+                        sheet_formulas[position] = UncalculatedFormula(expression)
+                if sheet_formulas:
+                    formulas[name] = sheet_formulas
+            return formulas
+    except (BadZipFile, KeyError, ElementTree.ParseError, OSError):
+        # A abertura/validação principal continua pertencendo ao Calamine. Este
+        # leitor auxiliar nunca torna um arquivo inválido artificialmente válido.
+        return {}
 
 
 def _detect_header_row(matrix: list[list[Any]], max_scan: int = 25) -> int:
@@ -59,12 +136,19 @@ def read_excel(path: str | Path) -> WorkbookData:
     except Exception as exc:
         raise ExcelReadError(f"Não foi possível abrir a planilha '{file_path.name}': {exc}") from exc
 
+    formula_cells = _uncalculated_formula_cells(file_path)
     tables: list[TableData] = []
     for sheet_name in workbook.sheet_names:
         sheet = workbook.get_sheet_by_name(sheet_name)
         matrix = sheet.to_python()
         if not matrix:
             continue
+        for (row_index, column_index), formula in formula_cells.get(sheet_name, {}).items():
+            while len(matrix) <= row_index:
+                matrix.append([])
+            while len(matrix[row_index]) <= column_index:
+                matrix[row_index].append(None)
+            matrix[row_index][column_index] = formula
         header_idx = _detect_header_row(matrix)
         raw_headers = matrix[header_idx]
         headers: list[str] = []

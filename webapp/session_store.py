@@ -73,6 +73,13 @@ class SealedArtifact:
     plain_size: int
 
 
+@dataclass(frozen=True)
+class PreparedReportArtifacts:
+    artifact_root: Path
+    artifacts: dict[str, SealedArtifact]
+    script_hashes: list[str]
+
+
 @dataclass
 class SessionState:
     created_at: float = field(default_factory=time.time)
@@ -378,7 +385,12 @@ class SessionStore:
         state = self.state(key)
         return [self.upload_record(key, upload_id, purpose="financial") for upload_id in state.financial_upload_ids]
 
-    def replace_report_artifacts(self, key: str, source_dir: Path, script_hashes: list[str]) -> None:
+    def prepare_report_artifacts(
+        self,
+        key: str,
+        source_dir: Path,
+        script_hashes: list[str],
+    ) -> PreparedReportArtifacts:
         state = self.state(key)
         artifact_root = self.session_dir(key) / "artifacts" / secrets.token_hex(8)
         artifact_root.mkdir(parents=True, exist_ok=False)
@@ -400,19 +412,46 @@ class SessionStore:
                 )
             if "index.html" not in new_map or "Relatorio_Contas_a_Pagar.pdf" not in new_map:
                 raise RuntimeError("A geração não produziu todos os artefatos obrigatórios.")
-            old_root = state.report_artifact_root
-            state.report_artifacts = new_map
-            state.report_artifact_root = artifact_root
-            state.report_script_hashes = list(script_hashes)
-            state.last_report_url = "/report/current"
-            state.last_pdf_url = "/report/Relatorio_Contas_a_Pagar.pdf"
-            if old_root and old_root != artifact_root:
-                shutil.rmtree(old_root, ignore_errors=True)
+            return PreparedReportArtifacts(
+                artifact_root=artifact_root,
+                artifacts=new_map,
+                script_hashes=list(script_hashes),
+            )
         except Exception:
             shutil.rmtree(artifact_root, ignore_errors=True)
             raise
         finally:
             shutil.rmtree(source_dir, ignore_errors=True)
+
+    def activate_report_artifacts(self, key: str, prepared: PreparedReportArtifacts) -> None:
+        state = self.state(key)
+        if (
+            not prepared.artifact_root.is_dir()
+            or "index.html" not in prepared.artifacts
+            or "Relatorio_Contas_a_Pagar.pdf" not in prepared.artifacts
+        ):
+            raise RuntimeError("Os novos artefatos do relatório não estão completos.")
+        old_root = state.report_artifact_root
+        state.report_artifacts = dict(prepared.artifacts)
+        state.report_artifact_root = prepared.artifact_root
+        state.report_script_hashes = list(prepared.script_hashes)
+        state.last_report_url = "/report/current"
+        state.last_pdf_url = "/report/Relatorio_Contas_a_Pagar.pdf"
+        if old_root and old_root != prepared.artifact_root:
+            shutil.rmtree(old_root, ignore_errors=True)
+
+    @staticmethod
+    def discard_prepared_report(prepared: PreparedReportArtifacts | None) -> None:
+        if prepared is not None:
+            shutil.rmtree(prepared.artifact_root, ignore_errors=True)
+
+    def replace_report_artifacts(self, key: str, source_dir: Path, script_hashes: list[str]) -> None:
+        prepared = self.prepare_report_artifacts(key, source_dir, script_hashes)
+        try:
+            self.activate_report_artifacts(key, prepared)
+        except Exception:
+            self.discard_prepared_report(prepared)
+            raise
 
     def put_report_artifact(self, key: str, source: Path, logical_name: str, download_name: str) -> SealedArtifact:
         """Acrescenta ou substitui um artefato cifrado sem invalidar o relatório atual."""

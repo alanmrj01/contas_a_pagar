@@ -1,4 +1,4 @@
-from app.services.metrics import aggregate_suppliers, chart_data, summarize
+from app.services.metrics import aggregate_suppliers, category_waterfall, chart_data, least_squares_trend, summarize
 
 
 def test_summary():
@@ -75,48 +75,20 @@ def test_flow_contributions_preserve_positive_negative_and_close_values():
     assert sum(row["variance"] for row in flows.values()) == summary["variance"]
 
 
-def test_monthly_supplier_category_reconciles_dated_values():
-    p=[
-        {"value":100,"supplier_key":"A","supplier":"Fornecedor A","category":"CAT 1","date":"2026-05-02"},
-        {"value":50,"supplier_key":"A","supplier":"Fornecedor A","category":"CAT 1","date":"2026-05-20"},
-        {"value":80,"supplier_key":"B","supplier":"Fornecedor B","category":"CAT 2","date":"2026-06-01"},
-    ]
-    r=[
-        {"value":120,"supplier_key":"A","supplier":"Fornecedor A","category":"CAT 1","date":"2026-05-11"},
-        {"value":90,"supplier_key":"B","supplier":"Fornecedor B","category":"CAT 2","date":"2026-06-15"},
-    ]
-    charts=chart_data(p,r)
-    rows=charts["monthly_supplier_category"]
-    may=next(x for x in rows if x["month"]=="2026-05" and x["supplier_key"]=="A")
-    jun=next(x for x in rows if x["month"]=="2026-06" and x["supplier_key"]=="B")
-    assert may["category"]=="CAT 1"
-    assert may["planned"]==150
-    assert may["actual"]==120
-    assert jun["planned"]==80
-    assert jun["actual"]==90
-    assert sum(x["planned"] for x in rows)==230
-    assert sum(x["actual"] for x in rows)==210
+def test_realized_trend_is_linear_ordinary_least_squares_in_chronological_order():
+    assert least_squares_trend([10, 20, 30, 40]) == [10, 20, 30, 40]
+    assert least_squares_trend([10, 30, 20]) == [15, 20, 25]
+    assert least_squares_trend([7]) == [7]
 
 
-def test_monthly_supplier_category_includes_flow_category_and_month_comparison():
-    p=[
-        {"value":100,"supplier_key":"A","supplier":"Fornecedor A","category":"CAT 1","flow":"FLUXO 1","date":"2026-05-02"},
-        {"value":120,"supplier_key":"A","supplier":"Fornecedor A","category":"CAT 1","flow":"FLUXO 1","date":"2026-06-02"},
-    ]
-    r=[
-        {"value":90,"supplier_key":"A","supplier":"Fornecedor A","category":"CAT 1","flow":"FLUXO 1","date":"2026-05-11","punctuality":"Sem data"},
-        {"value":150,"supplier_key":"A","supplier":"Fornecedor A","category":"CAT 1","flow":"FLUXO 1","date":"2026-06-11","punctuality":"Sem data"},
-    ]
-    rows=chart_data(p,r)["monthly_supplier_category"]
-    jun=next(x for x in rows if x["month"]=="2026-06")
-    assert jun["flow"]=="FLUXO 1"
-    assert jun["category"]=="CAT 1"
-    assert jun["has_previous"] is True
-    assert jun["previous_planned"]==100
-    assert jun["previous_actual"]==90
-    assert jun["planned_mom_delta"]==20
-    assert jun["actual_mom_delta"]==60
-    assert round(jun["actual_mom_pct"],2)==66.67
+def test_category_waterfall_closes_exactly_at_reconciled_actual_total():
+    p = [{"value": 100, "category": "A"}, {"value": 50, "category": "B"}]
+    r = [{"value": 130, "category": "A"}, {"value": 20, "category": "B"}, {"value": 15, "category": "C"}]
+    waterfall = category_waterfall(p, r)
+    assert waterfall["planned"] == 150
+    assert sum(step["contribution"] for step in waterfall["steps"]) == 15
+    assert waterfall["planned"] + sum(step["contribution"] for step in waterfall["steps"]) == waterfall["actual"] == 165
+    assert waterfall["variance"] == 15
 
 
 def test_summary_does_not_report_zero_punctuality_when_dates_are_unavailable():

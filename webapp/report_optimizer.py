@@ -42,8 +42,8 @@ def optimize_report_file(path: Path) -> list[str]:
         raise RuntimeError("Patch de desempenho incompatível com o template atual (formatadores).")
     html = html.replace(old, new, 1)
 
-    old_dates = "${x.date?new Date(x.date+'T00:00:00').toLocaleDateString('pt-BR'):'—'}</td><td>${x.due_date?new Date(x.due_date+'T00:00:00').toLocaleDateString('pt-BR'):'—'}"
-    new_dates = "${dateBR(x.date)}</td><td>${dateBR(x.due_date)}"
+    old_dates = "(x.date?new Date(x.date+'T00:00:00').toLocaleDateString('pt-BR'):'—')+'</td><td>'+(x.due_date?new Date(x.due_date+'T00:00:00').toLocaleDateString('pt-BR'):'—')"
+    new_dates = "dateBR(x.date)+'</td><td>'+dateBR(x.due_date)"
     if old_dates not in html:
         raise RuntimeError("Patch de desempenho incompatível com o template atual (datas).")
     html = html.replace(old_dates, new_dates, 1)
@@ -70,9 +70,9 @@ def optimize_report_file(path: Path) -> list[str]:
         raise RuntimeError("Patch de desempenho incompatível com o template atual (cache de pesquisa).")
 
     pass_pattern = re.compile(
-        r"function pass\(x\)\{if\(!matchesSelected\(x\.category,state\.category\)\)return false;if\(!matchesSelected\(x\.flow,state\.flow\)\)return false;if\(!matchesSelected\(x\.supplier,state\.supplier\)\)return false;if\(state\.emission\.length&&!state\.emission\.includes\(emissionKeyForItem\(x\)\)\)return false;let terms=state\.search\.split\(','\)\.map\(v=>v\.trim\(\)\.toLowerCase\(\)\)\.filter\(Boolean\);if\(terms\.length\)\{let hay=`\$\{x\.supplier\|\|''\} \$\{x\.supplier_source\|\|''\} \$\{x\.title\|\|''\}`\.toLowerCase\(\);if\(!terms\.some\(q=>hay\.includes\(q\)\)\)return false\}return true\}"
+        r"function pass\(x\)\{if\(!matchesSelected\(x\.category,state\.category\)\)return false;if\(!matchesSelected\(x\.subcategory,state\.subcategory\)\)return false;if\(!matchesSelected\(x\.flow,state\.flow\)\)return false;if\(!matchesSelected\(x\.supplier,state\.supplier\)\)return false;if\(state\.emission\.length&&!state\.emission\.includes\(emissionKeyForItem\(x\)\)\)return false;let terms=state\.search\.split\(','\)\.map\(v=>v\.trim\(\)\.toLowerCase\(\)\)\.filter\(Boolean\);if\(terms\.length\)\{let hay=`\$\{x\.supplier\|\|''\} \$\{x\.supplier_source\|\|''\} \$\{x\.title\|\|''\}`\.toLowerCase\(\);if\(!terms\.some\(q=>hay\.includes\(q\)\)\)return false\}return true\}"
     )
-    new_pass = "function pass(x){if(!matchesSelected(x.category,state.category))return false;if(!matchesSelected(x.flow,state.flow))return false;if(!matchesSelected(x.supplier,state.supplier))return false;if(state.emission.length&&!state.emission.includes(emissionKeyForItem(x)))return false;let terms=searchTerms();if(terms.length&&!terms.some(q=>x.__webSearch.includes(q)))return false;return true}"
+    new_pass = "function pass(x){if(!matchesSelected(x.category,state.category))return false;if(!matchesSelected(x.subcategory,state.subcategory))return false;if(!matchesSelected(x.flow,state.flow))return false;if(!matchesSelected(x.supplier,state.supplier))return false;if(state.emission.length&&!state.emission.includes(emissionKeyForItem(x)))return false;let terms=searchTerms();if(terms.length&&!terms.some(q=>x.__webSearch.includes(q)))return false;return true}"
     html, count = pass_pattern.subn(new_pass, html, count=1)
     if count != 1:
         raise RuntimeError("Patch de desempenho incompatível com o template atual (filtro de pesquisa).")
@@ -97,7 +97,7 @@ def optimize_report_file(path: Path) -> list[str]:
     )
     new_possible = (
         "const FACET_VALUE_CACHE=new Map();"
-        "function facetStateKey(facet){return [facet,state.category.join('\\u001f'),state.flow.join('\\u001f'),state.supplier.join('\\u001f'),state.emissionMode,state.emission.join('\\u001f'),state.search].join('\\u001e')}"
+        "function facetStateKey(facet){return [facet,state.category.join('\\u001f'),state.subcategory.join('\\u001f'),state.flow.join('\\u001f'),state.supplier.join('\\u001f'),state.emissionMode,state.emission.join('\\u001f'),state.search].join('\\u001e')}"
         "function possibleFacetValues(facet){const cacheKey=facetStateKey(facet);if(FACET_VALUE_CACHE.has(cacheKey))return FACET_VALUE_CACHE.get(cacheKey);"
         "const items=ALL_ITEMS.filter(x=>passExcept(x,facet));let values;"
         "if(facet==='emission')values=[...new Set(items.map(x=>{let raw=String(competenceDateForItem(x)||'');return raw?raw.slice(0,state.emissionMode==='date'?10:7):''}).filter(Boolean))].sort();"
@@ -107,8 +107,8 @@ def optimize_report_file(path: Path) -> list[str]:
         raise RuntimeError("Patch de desempenho incompatível com o template atual (facets).")
     html = html.replace(old_possible, new_possible, 1)
 
-    old_refresh = "function refreshFilterOptions(){pruneUnavailableSelections();paintStandardFilter('category');paintStandardFilter('flow');paintStandardFilter('supplier');paintEmissionFilter();refreshMonthFilterOptions()}\nfunction applyFiltersNow(){refreshFilterOptions();render()}"
-    new_refresh = "function refreshFilterOptions(){FACET_VALUE_CACHE.clear();const changed=pruneUnavailableSelections();if(changed)FACET_VALUE_CACHE.clear();paintStandardFilter('category');paintStandardFilter('flow');paintStandardFilter('supplier');paintEmissionFilter();refreshMonthFilterOptions()}let filterApplyFrame=0;function applyFiltersNow(){if(filterApplyFrame)cancelAnimationFrame(filterApplyFrame);filterApplyFrame=requestAnimationFrame(()=>{filterApplyFrame=0;refreshFilterOptions();render()})}"
+    old_refresh = "function refreshFilterOptions(){pruneUnavailableSelections();paintStandardFilter('category');paintStandardFilter('subcategory');paintStandardFilter('flow');paintStandardFilter('supplier');paintEmissionFilter()}\nfunction applyFiltersNow(){refreshFilterOptions();render()}"
+    new_refresh = "function refreshFilterOptions(){FACET_VALUE_CACHE.clear();const changed=pruneUnavailableSelections();if(changed)FACET_VALUE_CACHE.clear();paintStandardFilter('category');paintStandardFilter('subcategory');paintStandardFilter('flow');paintStandardFilter('supplier');paintEmissionFilter()}let filterApplyFrame=0;function applyFiltersNow(){if(filterApplyFrame)cancelAnimationFrame(filterApplyFrame);filterApplyFrame=requestAnimationFrame(()=>{filterApplyFrame=0;refreshFilterOptions();render()})}"
     if old_refresh not in html:
         raise RuntimeError("Patch de desempenho incompatível com o template atual (ciclo de filtros).")
     html = html.replace(old_refresh, new_refresh, 1)
@@ -125,10 +125,10 @@ def optimize_report_file(path: Path) -> list[str]:
     html = html.replace(old_search, new_search, 1)
 
     # Evita dezenas de recalculos de layout durante resize contínuo.
-    old_resize = "window.addEventListener('resize',()=>{hideInfoTip();fitReportValues();fitMonthlyViewport()});"
+    old_resize = "window.addEventListener('resize',()=>{hideInfoTip();fitReportValues()});"
     new_resize = (
         "let resizeFrame=0;window.addEventListener('resize',()=>{hideInfoTip();"
-        "if(resizeFrame)return;resizeFrame=requestAnimationFrame(()=>{resizeFrame=0;fitReportValues();fitMonthlyViewport()})});"
+        "if(resizeFrame)return;resizeFrame=requestAnimationFrame(()=>{resizeFrame=0;fitReportValues()})});"
     )
     if old_resize not in html:
         raise RuntimeError("Patch de desempenho incompatível com o template atual (resize).")

@@ -20,14 +20,14 @@ PREVISTO_EXPORT_COLUMNS = [
     ("source_file", "Arquivo origem"), ("source_sheet", "Aba"), ("source_row", "Linha"),
     ("title", "Título previsto"), ("supplier_code", "Cód Fornecedor"), ("supplier_source", "Fornecedor original"),
     ("supplier", "Fornecedor classificado"), ("date", "Data prevista"), ("value", "Valor previsto"),
-    ("flow", "Fluxo JMM"), ("category", "Categoria"), ("match", "Regra classificação"),
+    ("flow", "Fluxo JMM"), ("category", "Categoria"), ("subcategory", "Subcategoria"), ("match", "Regra classificação"),
 ]
 
 REALIZADO_EXPORT_COLUMNS = [
     ("source_file", "Arquivo origem"), ("source_sheet", "Aba"), ("source_row", "Linha"),
     ("title", "Título"), ("supplier_code", "Cód Fornecedor"), ("supplier_source", "Fornecedor original"),
     ("supplier", "Fornecedor classificado"), ("date", "Último pagamento"), ("due_date", "Vencimento"),
-    ("value", "Vlr.Original"), ("flow", "Fluxo JMM"), ("category", "Categoria"),
+    ("value", "Vlr.Original"), ("flow", "Fluxo JMM"), ("category", "Categoria"), ("subcategory", "Subcategoria"),
     ("punctuality", "Pontualidade"), ("company", "Empresa"), ("branch", "Filial"),
     ("account", "Conta contábil"), ("financial_account", "Conta financeira"), ("cost_center", "Centro de custo"),
     ("match", "Regra classificação"),
@@ -110,7 +110,7 @@ def _write_updated_report_workbook(path: Path, result: ReconcileResult) -> None:
         ("PREVISTO", [
             ("title", "Título Previsto"), ("supplier_code", "Cód Fornecedor"),
             ("supplier", "Fornecedor"), ("date", "Data prevista"), ("value", "Valor previsto"),
-            ("month_text", "Mês"), ("flow", "Fluxo JMM"), ("category", "Categoria"),
+            ("month_text", "Mês"), ("flow", "Fluxo JMM"), ("category", "Categoria"), ("subcategory", "Subcategoria"),
             ("source_file", "Arquivo origem"), ("source_sheet", "Aba origem"), ("source_row", "Linha origem"),
         ], result.previsto),
         ("REALIZADO", [
@@ -119,7 +119,7 @@ def _write_updated_report_workbook(path: Path, result: ReconcileResult) -> None:
             ("due_date", "Vencimento"), ("company", "Empresa"), ("branch", "Filial"),
             ("status", "Sit."), ("account", "Desc. Conta Contábil"),
             ("financial_account", "Desc. Conta Financeira"), ("cost_center", "Desc. Centro de Custo"),
-            ("flow", "Fluxo JMM"), ("category", "Categoria"),
+            ("flow", "Fluxo JMM"), ("category", "Categoria"), ("subcategory", "Subcategoria"),
             ("source_file", "Arquivo origem"), ("source_sheet", "Aba origem"), ("source_row", "Linha origem"),
         ], result.realizado),
     ]
@@ -177,7 +177,7 @@ def export_report_workbooks(result: ReconcileResult, output_dir: Path) -> dict[s
 
     s_path = exports / "Analise_por_fornecedor.xlsx"
     _write_xlsx(s_path, "FORNECEDORES", [
-        ("supplier_code", "Cód Fornecedor"), ("supplier", "Fornecedor"), ("category", "Categoria"), ("flow", "Fluxo JMM"),
+        ("supplier_code", "Cód Fornecedor"), ("supplier", "Fornecedor"), ("category", "Categoria"), ("subcategory", "Subcategoria"), ("flow", "Fluxo JMM"),
         ("planned", "Previsto"), ("actual", "Realizado"), ("variance", "Desvio"), ("variance_pct", "Variação %"),
         ("planned_records", "Linhas previsto"), ("actual_records", "Títulos realizado"),
     ], aggregate_suppliers(result.previsto, result.realizado), required_money_keys={"planned", "actual", "variance"})

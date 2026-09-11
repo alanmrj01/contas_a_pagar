@@ -25,6 +25,10 @@ class SupabaseUnavailable(RuntimeError):
     pass
 
 
+class BaseRevisionConflict(RuntimeError):
+    pass
+
+
 class AuthenticationRejected(RuntimeError):
     pass
 
@@ -159,6 +163,10 @@ class SupabaseGateway:
             safe_status = int(getattr(exc, "code", 0) or 0)
             if endpoint.startswith("/auth/v1/") and safe_status in {400, 401, 403, 422}:
                 raise AuthenticationRejected("E-mail ou senha inválidos.") from exc
+            if endpoint.startswith(f"/rest/v1/{BASE_TABLE}") and safe_status == 409:
+                raise BaseRevisionConflict(
+                    "A Base de Dados foi alterada em outra sessão ou janela. Recarregue a Base antes de salvar suas alterações."
+                ) from exc
             raise SupabaseUnavailable("O serviço externo recusou a operação segura solicitada.") from exc
         except AuthenticationRejected:
             raise
@@ -344,6 +352,7 @@ class SupabaseGateway:
                     "supplier": str(item.get("supplier") or "").strip(),
                     "flow": str(item.get("flow") or "").strip(),
                     "category": str(item.get("category") or "").strip(),
+                    "subcategory": str(item.get("subcategory") or "").strip(),
                 }
                 for item in document["items"]
                 if isinstance(item, dict)
@@ -356,17 +365,27 @@ class SupabaseGateway:
                 "A BASE DADOS persistida não passou na verificação criptográfica. A operação foi interrompida."
             ) from exc
 
-    def save_base(self, user_id: str, items: list[dict[str, str]]) -> str:
-        self._require_configuration()
-        canonical = [
+    @staticmethod
+    def _canonical_base_items(items: list[dict[str, str]]) -> list[dict[str, str]]:
+        return [
             {
                 "supplier_code": str(item.get("supplier_code") or "").strip(),
                 "supplier": str(item.get("supplier") or "").strip(),
                 "flow": str(item.get("flow") or "").strip(),
                 "category": str(item.get("category") or "").strip(),
+                "subcategory": str(item.get("subcategory") or "").strip(),
             }
             for item in items
         ]
+
+    def _encrypted_base_payload(
+        self,
+        user_id: str,
+        items: list[dict[str, str]],
+        *,
+        revision: str | None = None,
+    ) -> tuple[dict[str, Any], str]:
+        canonical = self._canonical_base_items(items)
         plain = json.dumps(
             {"schema": 1, "items": canonical},
             ensure_ascii=False,
@@ -375,20 +394,101 @@ class SupabaseGateway:
         ).encode("utf-8")
         nonce = os.urandom(12)
         cipher = AESGCM(self._base_key()).encrypt(nonce, plain, self._aad(user_id))
-        revision = hashlib.sha256(nonce + cipher).hexdigest()[:12]
-        payload = {
+        next_revision = revision or hashlib.sha256(nonce + cipher).hexdigest()[:12]
+        return {
             "user_id": user_id,
             "ciphertext": base64.b64encode(cipher).decode("ascii"),
             "nonce": base64.b64encode(nonce).decode("ascii"),
-            "revision": revision,
+            "revision": next_revision,
             "row_count": len(canonical),
             "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
-        self._request_json(
-            "POST",
-            f"/rest/v1/{BASE_TABLE}?on_conflict=user_id",
+        }, next_revision
+
+    @staticmethod
+    def _require_single_base_write(result: Any, revision: str) -> None:
+        if (
+            not isinstance(result, list)
+            or len(result) != 1
+            or not isinstance(result[0], dict)
+            or str(result[0].get("revision") or "") != revision
+        ):
+            raise BaseRevisionConflict(
+                "A Base de Dados foi alterada em outra sessão ou janela. Recarregue a Base antes de salvar suas alterações."
+            )
+
+    def save_base(
+        self,
+        user_id: str,
+        items: list[dict[str, str]],
+        *,
+        expected_revision: str,
+    ) -> str:
+        self._require_configuration()
+        expected = str(expected_revision or "").strip()
+        if not expected:
+            raise BaseRevisionConflict(
+                "A Base de Dados foi alterada em outra sessão ou janela. Recarregue a Base antes de salvar suas alterações."
+            )
+        payload, revision = self._encrypted_base_payload(user_id, items)
+        if expected == "padrao":
+            method = "POST"
+            endpoint = f"/rest/v1/{BASE_TABLE}"
+        else:
+            method = "PATCH"
+            query = urllib.parse.urlencode({
+                "user_id": f"eq.{user_id}",
+                "revision": f"eq.{expected}",
+            })
+            endpoint = f"/rest/v1/{BASE_TABLE}?{query}"
+        result = self._request_json(
+            method,
+            endpoint,
             api_key=self.secret_key,
             payload=payload,
-            extra_headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
+            extra_headers={"Prefer": "return=representation"},
         )
+        self._require_single_base_write(result, revision)
         return revision
+
+    def restore_base(
+        self,
+        user_id: str,
+        previous_items: list[dict[str, str]] | None,
+        *,
+        previous_revision: str,
+        expected_revision: str,
+    ) -> None:
+        """Compensa uma gravação cuja ativação final na sessão não foi concluída."""
+
+        self._require_configuration()
+        query = urllib.parse.urlencode({
+            "user_id": f"eq.{user_id}",
+            "revision": f"eq.{expected_revision}",
+        })
+        endpoint = f"/rest/v1/{BASE_TABLE}?{query}"
+        if previous_items is None and previous_revision == "padrao":
+            result = self._request_json(
+                "DELETE",
+                endpoint,
+                api_key=self.secret_key,
+                extra_headers={"Prefer": "return=representation"},
+            )
+            if not isinstance(result, list) or len(result) != 1:
+                raise BaseRevisionConflict(
+                    "A Base de Dados mudou antes que a restauração pudesse ser confirmada."
+                )
+            return
+
+        payload, restored_revision = self._encrypted_base_payload(
+            user_id,
+            previous_items or [],
+            revision=previous_revision,
+        )
+        result = self._request_json(
+            "PATCH",
+            endpoint,
+            api_key=self.secret_key,
+            payload=payload,
+            extra_headers={"Prefer": "return=representation"},
+        )
+        self._require_single_base_write(result, restored_revision)

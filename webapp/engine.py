@@ -10,7 +10,7 @@ from typing import Any
 from app.services.base_manager import _write_base_xlsx
 from app.services.excel_export import export_filtered_report_workbook
 from app.services.excel_reader import TableData, WorkbookData, read_excel
-from app.services.normalizer import find_column
+from app.services.normalizer import ValueParseError, find_column, to_date, to_float
 from app.services.reconciler import ReconcileResult, normalize_supplier_code, reconcile, validate_base
 from app.services.report_generator import generate_report
 from app.services.sheet_detector import InputDetection, detect_base_table, detect_input_tables
@@ -18,8 +18,8 @@ from app.services.text_utils import normalize_text
 from app.services.validation_service import ValidatedInput
 
 from .report_optimizer import optimize_report_file
-from .session_store import SessionStore
-from .supabase_gateway import SupabaseGateway
+from .session_store import PreparedReportArtifacts, SessionStore
+from .supabase_gateway import BaseRevisionConflict, SupabaseGateway
 
 
 @dataclass
@@ -27,6 +27,10 @@ class BaseView:
     path: Path
     table: TableData
     is_custom: bool
+
+
+class BaseRollbackFailed(RuntimeError):
+    pass
 
 
 class WebEngine:
@@ -44,19 +48,21 @@ class WebEngine:
         c_name = find_column(table, "Fornecedor")
         c_flow = find_column(table, "Fluxo JMM", "Fluxo")
         c_cat = find_column(table, "Categoria")
+        c_subcat = find_column(table, "Subcategoria")
         return [
             {
                 "supplier_code": WebEngine._code_key(row.get(c_code)),
                 "supplier": str(row.get(c_name) or "").strip(),
                 "flow": str(row.get(c_flow) or "").strip(),
                 "category": str(row.get(c_cat) or "").strip(),
+                "subcategory": str(row.get(c_subcat) or "").strip() if c_subcat else "",
             }
             for row in table.rows
         ]
 
     @staticmethod
     def _table_from_items(items: list[dict[str, Any]], *, source_name: str = "BASE_DADOS_EDITADA") -> TableData:
-        headers = ["Cód Fornecedor", "Fornecedor", "Fluxo JMM", "Categoria"]
+        headers = ["Cód Fornecedor", "Fornecedor", "Fluxo JMM", "Categoria", "Subcategoria"]
         rows = []
         for index, item in enumerate(items, start=2):
             rows.append({
@@ -64,6 +70,7 @@ class WebEngine:
                 "Fornecedor": str(item.get("supplier") or "").strip(),
                 "Fluxo JMM": str(item.get("flow") or "").strip(),
                 "Categoria": str(item.get("category") or "").strip(),
+                "Subcategoria": str(item.get("subcategory") or "").strip(),
                 "__source_file__": source_name,
                 "__source_path__": source_name,
                 "__source_sheet__": "BASE DADOS",
@@ -94,7 +101,7 @@ class WebEngine:
         state.custom_base_revision = revision
         return self.base_info(sid)
 
-    def _commit_base(self, sid: str, table: TableData) -> dict[str, Any]:
+    def _prepare_base_table(self, sid: str, table: TableData) -> TableData:
         validate_base(table)
         verify_dir = self.store.new_work_dir(sid, "base_verify")
         tmp = verify_dir / "base_dados_validada.xlsx"
@@ -103,19 +110,196 @@ class WebEngine:
             persisted_wb = read_excel(tmp)
             persisted_table = detect_base_table(persisted_wb)
             validate_base(persisted_table)
-            state = self.store.state(sid)
-            if not state.authenticated_user_id:
-                raise RuntimeError("Autenticação necessária para salvar a BASE DADOS.")
+            return persisted_table
+        finally:
+            shutil.rmtree(verify_dir, ignore_errors=True)
+
+    @staticmethod
+    def _normalize_manual_corrections(corrections: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+        allowed = {
+            "Valor previsto": ("previsto", "number"),
+            "Vlr.Original": ("realizado", "number"),
+            "Data prevista": ("previsto", "date"),
+            "Emissão": ("realizado", "date"),
+            "Ult. Pgto.": ("realizado", "date"),
+            "Vencimento": ("realizado", "date"),
+        }
+        normalized: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, int, str]] = set()
+        for raw in corrections or []:
+            source_file = str(raw.get("source_file") or "").strip()
+            source_sheet = str(raw.get("source_sheet") or "").strip()
+            try:
+                source_row = int(raw.get("source_row") or 0)
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError("A linha de origem da correção não é válida.") from exc
+            field = str(raw.get("field") or "").strip()
+            value = str(raw.get("value") or "").strip()
+            if not source_file or not source_sheet or source_row < 1 or field not in allowed:
+                raise RuntimeError("A origem ou o campo informado para correção não é válido.")
+            if not value:
+                raise RuntimeError(f"Informe um valor corrigido para {source_file} > {source_sheet} > linha {source_row} > {field}.")
+            role, kind = allowed[field]
+            try:
+                parsed: Any = to_float(value, field=field) if kind == "number" else to_date(value)
+            except ValueParseError as exc:
+                raise RuntimeError(
+                    f"Valor corrigido inválido em {source_file} > {source_sheet} > linha {source_row} > {field}: {exc}."
+                ) from exc
+            if parsed is None:
+                raise RuntimeError(
+                    f"Data corrigida inválida em {source_file} > {source_sheet} > linha {source_row} > {field}."
+                )
+            key = (source_file, source_sheet, source_row, field)
+            if key in seen:
+                raise RuntimeError(
+                    f"A mesma célula foi informada mais de uma vez: {source_file} > {source_sheet} > linha {source_row} > {field}."
+                )
+            seen.add(key)
+            normalized.append({
+                "source_file": source_file,
+                "source_sheet": source_sheet,
+                "source_row": source_row,
+                "field": field,
+                "value": value,
+                "parsed_value": parsed.isoformat() if kind == "date" else parsed,
+                "role": role,
+            })
+        return normalized
+
+    @classmethod
+    def _apply_manual_corrections(
+        cls,
+        detection: InputDetection,
+        corrections: list[dict[str, Any]] | None,
+    ) -> list[dict[str, Any]]:
+        normalized = cls._normalize_manual_corrections(corrections)
+        tables_by_role = {
+            "previsto": detection.previsto_tables,
+            "realizado": detection.realizado_tables,
+        }
+        for correction in normalized:
+            matches: list[dict[str, Any]] = []
+            for table in tables_by_role[correction["role"]]:
+                for row in table.rows:
+                    if (
+                        str(row.get("__source_file__") or "").strip() == correction["source_file"]
+                        and str(row.get("__source_sheet__") or "").strip() == correction["source_sheet"]
+                        and int(row.get("__source_row__") or 0) == correction["source_row"]
+                    ):
+                        matches.append(row)
+            if len(matches) != 1:
+                qualifier = "não foi encontrada" if not matches else "não é única"
+                raise RuntimeError(
+                    f"A célula de origem {correction['source_file']} > {correction['source_sheet']} > "
+                    f"linha {correction['source_row']} > {correction['field']} {qualifier}. Revalide os arquivos."
+                )
+            matches[0][correction["field"]] = correction["parsed_value"]
+        return normalized
+
+    @staticmethod
+    def _merge_manual_corrections(
+        previous: list[dict[str, Any]],
+        incoming: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        merged = {
+            (item["source_file"], item["source_sheet"], int(item["source_row"]), item["field"]): dict(item)
+            for item in previous
+        }
+        for item in incoming:
+            merged[(item["source_file"], item["source_sheet"], int(item["source_row"]), item["field"])] = dict(item)
+        return list(merged.values())
+
+    def _current_base_revision(self, sid: str) -> str:
+        state = self.store.state(sid)
+        return state.custom_base_revision if state.custom_base_table is not None else "padrao"
+
+    def _assert_base_revision(self, sid: str, expected_revision: str) -> str:
+        expected = str(expected_revision or "").strip()
+        state = self.store.state(sid)
+        if not state.authenticated_user_id or not expected:
+            raise BaseRevisionConflict(
+                "A Base de Dados foi alterada em outra sessão ou janela. Recarregue a Base antes de salvar suas alterações."
+            )
+        local_revision = self._current_base_revision(sid)
+        loaded = self.persistence.load_base(state.authenticated_user_id)
+        persisted_revision = loaded[1] if loaded is not None else "padrao"
+        if expected != local_revision or expected != persisted_revision:
+            raise BaseRevisionConflict(
+                "A Base de Dados foi alterada em outra sessão ou janela. Recarregue a Base antes de salvar suas alterações."
+            )
+        return expected
+
+    def _commit_base(
+        self,
+        sid: str,
+        table: TableData,
+        *,
+        expected_revision: str,
+        report_paths: list[Path] | None = None,
+        manual_corrections: list[dict[str, Any]] | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        expected = self._assert_base_revision(sid, expected_revision)
+        persisted_table = self._prepare_base_table(sid, table)
+        state = self.store.state(sid)
+        previous_revision = self._current_base_revision(sid)
+        previous_items = (
+            self._base_items(state.custom_base_table)
+            if state.custom_base_table is not None
+            else None
+        )
+        prepared_report: PreparedReportArtifacts | None = None
+        validated: ValidatedInput | None = None
+        report_result: dict[str, str] | None = None
+        revision = ""
+        try:
+            if report_paths is not None:
+                validated = self._validate_with_base(
+                    report_paths,
+                    persisted_table,
+                    manual_corrections=manual_corrections,
+                )
+                prepared_report, report_result = self._build_report_artifacts(sid, validated)
+
             revision = self.persistence.save_base(
                 state.authenticated_user_id,
                 self._base_items(persisted_table),
+                expected_revision=expected,
             )
-            state.custom_base_table = persisted_table
-            state.custom_base_revision = revision
+            try:
+                if prepared_report is not None:
+                    self.store.activate_report_artifacts(sid, prepared_report)
+                state.custom_base_table = persisted_table
+                state.custom_base_revision = revision
+                if validated is not None:
+                    state.validated = validated
+                    state.last_source_names = [path.name for path in validated.paths]
+                else:
+                    self.store.invalidate_validation(sid, preserve_last_outputs=True)
+            except Exception as exc:
+                try:
+                    self.persistence.restore_base(
+                        state.authenticated_user_id,
+                        previous_items,
+                        previous_revision=previous_revision,
+                        expected_revision=revision,
+                    )
+                except Exception as rollback_exc:
+                    raise BaseRollbackFailed(
+                        "A atualização falhou e não foi possível confirmar a restauração da Base persistida. Recarregue a Base antes de continuar."
+                    ) from rollback_exc
+                raise exc
+
+            prepared_report = None
+            report_payload = None
+            if validated is not None and report_result is not None:
+                report_payload = {
+                    "summary": self.validation_summary(validated),
+                    **report_result,
+                }
+            return self.base_info(sid), report_payload
         finally:
-            shutil.rmtree(verify_dir, ignore_errors=True)
-        self.store.invalidate_validation(sid, preserve_last_outputs=True)
-        return self.base_info(sid)
+            self.store.discard_prepared_report(prepared_report)
 
     def active_base(self, sid: str) -> BaseView:
         state = self.store.state(sid)
@@ -144,22 +328,27 @@ class WebEngine:
         c_name = find_column(table, "Fornecedor")
         c_flow = find_column(table, "Fluxo JMM", "Fluxo")
         c_cat = find_column(table, "Categoria")
+        c_subcat = find_column(table, "Subcategoria")
         rows = [
             {
                 "supplier_code": self._code_key(row.get(c_code)),
                 "supplier": str(row.get(c_name) or ""),
                 "flow": str(row.get(c_flow) or ""),
                 "category": str(row.get(c_cat) or ""),
+                "subcategory": str(row.get(c_subcat) or "") if c_subcat else "",
             }
             for row in table.rows
         ]
         return {**self.base_info(sid), "items": rows}
 
-    def base_options(self, sid: str) -> dict[str, list[str]]:
-        items = self.base_rows(sid)["items"]
+    def base_options(self, sid: str) -> dict[str, Any]:
+        base = self.base_rows(sid)
+        items = base["items"]
         return {
             "flows": sorted({item["flow"] for item in items if item["flow"]}, key=str.casefold),
             "categories": sorted({item["category"] for item in items if item["category"]}, key=str.casefold),
+            "subcategories": sorted({item["subcategory"] for item in items if item["subcategory"]}, key=str.casefold),
+            "revision": base["revision"],
         }
 
     def import_base(
@@ -168,6 +357,8 @@ class WebEngine:
         uploaded_path: Path,
         *,
         mode: str,
+        expected_revision: str,
+        report_paths: list[Path] | None = None,
         duplicate_action: str = "ask",
         edited_duplicates: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
@@ -187,6 +378,7 @@ class WebEngine:
                     "supplier": str(edits[index].get("supplier") or "").strip(),
                     "flow": str(edits[index].get("flow") or "").strip(),
                     "category": str(edits[index].get("category") or "").strip(),
+                    "subcategory": str(edits[index].get("subcategory") or "").strip(),
                 }
                 if index in edits else item
                 for index, item in enumerate(imported_items)
@@ -195,8 +387,13 @@ class WebEngine:
             self._table_from_items(imported_items, source_name="BASE_DADOS_IMPORTADA_EDITADA")
 
         if mode == "replace":
-            info = self._commit_base(sid, self._table_from_items(imported_items, source_name="BASE_DADOS_IMPORTADA"))
-            return {"ok": True, "base": info, "added": len(imported_items), "ignored": 0}
+            info, report = self._commit_base(
+                sid,
+                self._table_from_items(imported_items, source_name="BASE_DADOS_IMPORTADA"),
+                expected_revision=expected_revision,
+                report_paths=report_paths,
+            )
+            return {"ok": True, "base": info, "added": len(imported_items), "ignored": 0, **(report or {})}
         if mode != "append":
             raise RuntimeError("Escolha inválida para importação da BASE DADOS.")
 
@@ -234,27 +431,56 @@ class WebEngine:
 
         merged = [*current_items, *additions]
         if len(merged) == len(current_items):
+            self._assert_base_revision(sid, expected_revision)
             return {
                 "ok": True,
                 "base": self.base_info(sid),
                 "added": 0,
                 "ignored": len(conflict_indexes),
             }
-        info = self._commit_base(sid, self._table_from_items(merged, source_name="BASE_DADOS_MESCLADA"))
+        info, report = self._commit_base(
+            sid,
+            self._table_from_items(merged, source_name="BASE_DADOS_MESCLADA"),
+            expected_revision=expected_revision,
+            report_paths=report_paths,
+        )
         return {
             "ok": True,
             "base": info,
             "added": len(additions),
             "ignored": len(conflict_indexes),
+            **(report or {}),
         }
 
-    def update_base(self, sid: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+    def update_base(
+        self,
+        sid: str,
+        items: list[dict[str, Any]],
+        *,
+        expected_revision: str,
+        report_paths: list[Path] | None = None,
+    ) -> dict[str, Any]:
         if not items:
             raise RuntimeError("A BASE DADOS precisa conter ao menos um fornecedor.")
-        return self._commit_base(sid, self._table_from_items(items))
+        info, report = self._commit_base(
+            sid,
+            self._table_from_items(items),
+            expected_revision=expected_revision,
+            report_paths=report_paths,
+        )
+        return info if report is None else {"base": info, **report}
 
-    def apply_classifications(self, sid: str, assignments: list[dict[str, Any]]) -> dict[str, Any]:
-        if not assignments:
+    def apply_classifications(
+        self,
+        sid: str,
+        assignments: list[dict[str, Any]],
+        *,
+        expected_revision: str,
+        report_paths: list[Path],
+        manual_corrections: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        incoming_corrections = self._normalize_manual_corrections(manual_corrections)
+        if not assignments and not incoming_corrections:
             raise RuntimeError("Selecione ao menos uma linha para atualizar.")
         options = self.base_options(sid)
         allowed_flows = set(options["flows"])
@@ -267,8 +493,9 @@ class WebEngine:
                 "supplier": str(assignment.get("supplier") or "").strip(),
                 "flow": str(assignment.get("flow") or "").strip(),
                 "category": str(assignment.get("category") or "").strip(),
+                "subcategory": str(assignment.get("subcategory") or "").strip(),
             }
-            if not all(candidate.values()):
+            if not all(candidate[key] for key in ("supplier_code", "supplier", "flow", "category")):
                 raise RuntimeError("Cód Fornecedor, Fornecedor, Fluxo JMM e Categoria são obrigatórios nas linhas selecionadas.")
             if candidate["flow"] not in allowed_flows or candidate["category"] not in allowed_categories:
                 raise RuntimeError("Fluxo JMM ou Categoria não pertence às opções atuais da BASE DADOS.")
@@ -290,8 +517,37 @@ class WebEngine:
                 current = dict(items[existing_index])
                 current["flow"] = candidate["flow"]
                 current["category"] = candidate["category"]
+                if not str(current.get("subcategory") or "").strip() and candidate["subcategory"]:
+                    current["subcategory"] = candidate["subcategory"]
                 items[existing_index] = current
-        return self._commit_base(sid, self._table_from_items(items, source_name="BASE_DADOS_CLASSIFICADA_NO_RELATORIO"))
+        state = self.store.state(sid)
+        previous_corrections = list(getattr(state.validated, "manual_corrections", []) or [])
+        corrections = self._merge_manual_corrections(previous_corrections, incoming_corrections)
+        if assignments:
+            info, report = self._commit_base(
+                sid,
+                self._table_from_items(items, source_name="BASE_DADOS_CLASSIFICADA_NO_RELATORIO"),
+                expected_revision=expected_revision,
+                report_paths=report_paths,
+                manual_corrections=corrections,
+            )
+            return {"base": info, **(report or {})}
+
+        self._assert_base_revision(sid, expected_revision)
+        validated = self._validate_with_base(
+            report_paths,
+            self.active_base(sid).table,
+            manual_corrections=corrections,
+        )
+        prepared, report = self._build_report_artifacts(sid, validated)
+        try:
+            self.store.activate_report_artifacts(sid, prepared)
+            state.validated = validated
+            state.last_source_names = [path.name for path in validated.paths]
+        except Exception:
+            self.store.discard_prepared_report(prepared)
+            raise
+        return {"base": self.base_info(sid), "summary": self.validation_summary(validated), **report}
 
     def export_base(self, sid: str) -> Path:
         table = self.active_base(sid).table
@@ -305,7 +561,7 @@ class WebEngine:
         """Reaplica no backend somente filtros declarativos, nunca linhas financeiras do navegador."""
         selected = {
             key: {str(value) for value in filters.get(key, []) if str(value)}
-            for key in ("category", "flow", "supplier", "emission")
+            for key in ("category", "subcategory", "flow", "supplier", "emission")
         }
         emission_mode = "date" if filters.get("emission_mode") == "date" else "month"
         search_terms = [
@@ -315,7 +571,7 @@ class WebEngine:
         ]
 
         def keep(row: dict[str, Any]) -> bool:
-            for field in ("category", "flow", "supplier"):
+            for field in ("category", "subcategory", "flow", "supplier"):
                 if selected[field] and str(row.get(field) or "") not in selected[field]:
                     return False
             if selected["emission"]:
@@ -374,7 +630,7 @@ class WebEngine:
         - a BASE DADOS ativa continua tendo precedência;
         - somente códigos AUSENTES da base podem ser complementados;
         - a planilha de entrada precisa trazer, na mesma tabela, Cód Fornecedor,
-          Fornecedor, Fluxo JMM e Categoria;
+          Fornecedor, Fluxo JMM e Categoria, além da Subcategoria quando existir;
         - linhas incompletas nunca viram classificação automática;
         - se um mesmo código novo trouxer Fluxo JMM/Categoria conflitantes, ele
           não é adicionado e permanece sujeito ao tratamento normal de
@@ -388,6 +644,7 @@ class WebEngine:
         b_name = find_column(base, "Fornecedor")
         b_flow = find_column(base, "Fluxo JMM", "Fluxo")
         b_cat = find_column(base, "Categoria")
+        b_subcat = find_column(base, "Subcategoria")
         if not all((b_code, b_name, b_flow, b_cat)):
             # validate_base já produzirá a mensagem detalhada; não criar
             # comportamento paralelo quando a própria base estiver inválida.
@@ -415,6 +672,7 @@ class WebEngine:
                 c_name = find_column(table, "Fornecedor")
                 c_flow = find_column(table, "Fluxo JMM", "Fluxo")
                 c_cat = find_column(table, "Categoria")
+                c_subcat = find_column(table, "Subcategoria")
                 if not all((c_code, c_name, c_flow, c_cat)):
                     continue
 
@@ -423,6 +681,7 @@ class WebEngine:
                     name = str(row.get(c_name) or "").strip()
                     flow = str(row.get(c_flow) or "").strip()
                     category = str(row.get(c_cat) or "").strip()
+                    subcategory = str(row.get(c_subcat) or "").strip() if c_subcat else ""
 
                     # O complemento só pode ser criado com a chave completa.
                     if not code or not name or not flow or not category:
@@ -433,11 +692,14 @@ class WebEngine:
                     bucket = candidates.setdefault(code, {
                         "names": Counter(),
                         "classifications": {},
+                        "subcategories": set(),
                         "first_source": None,
                     })
                     bucket["names"][name] += 1
                     cls_key = (flow.casefold(), category.casefold())
                     bucket["classifications"].setdefault(cls_key, (flow, category))
+                    if subcategory:
+                        bucket["subcategories"].add(subcategory)
                     affected_records[code] += 1
                     if bucket["first_source"] is None:
                         bucket["first_source"] = {
@@ -472,13 +734,17 @@ class WebEngine:
             name = names[0][0]
 
             source = dict(bucket["first_source"] or {})
-            new_rows.append({
+            new_row = {
                 b_code: code,
                 b_name: name,
                 b_flow: flow,
                 b_cat: category,
                 **source,
-            })
+            }
+            if b_subcat:
+                subcategories = sorted(bucket["subcategories"], key=str.casefold)
+                new_row[b_subcat] = subcategories[0] if len(subcategories) == 1 else ""
+            new_rows.append(new_row)
 
         if not new_rows:
             return base, {
@@ -509,9 +775,15 @@ class WebEngine:
             "conflicting_codes": [item["supplier_code"] for item in conflicts],
         }
 
-    def validate(self, sid: str, paths: list[Path]) -> ValidatedInput:
+    def _validate_with_base(
+        self,
+        paths: list[Path],
+        base: TableData,
+        *,
+        manual_corrections: list[dict[str, Any]] | None = None,
+    ) -> ValidatedInput:
         # Mesma sequência determinística de validation_service.validate_inputs;
-        # a única diferença é a resolução da BASE DADOS por sessão web.
+        # a única diferença é receber explicitamente a BASE DADOS já validada.
         unique: list[Path] = []
         seen: set[str] = set()
         for raw in paths:
@@ -525,6 +797,7 @@ class WebEngine:
 
         workbooks: list[WorkbookData] = [read_excel(path) for path in unique]
         detection: InputDetection = detect_input_tables(workbooks)
+        normalized_corrections = self._apply_manual_corrections(detection, manual_corrections)
 
         # A base cadastrada continua sendo a referência principal. Para a
         # validação corrente, fornecedores realmente ausentes podem ser
@@ -532,7 +805,6 @@ class WebEngine:
         # existentes na própria planilha importada. Esse complemento é efêmero:
         # não altera o XLSX padrão, não persiste entre novas validações e não
         # contamina sessões de outros usuários.
-        base = self.active_base(sid).table
         base_for_run, enrichment = self._supplement_base_from_imported_workbooks(base, workbooks)
         result: ReconcileResult = reconcile(
             detection.previsto,
@@ -580,9 +852,19 @@ class WebEngine:
         validated = ValidatedInput(unique, workbooks, detection, result)
         # Metadado somente da camada Web; não altera o contrato do motor legado.
         validated.base_enrichment = enrichment
+        validated.manual_corrections = normalized_corrections
+        return validated
+
+    def validate(self, sid: str, paths: list[Path]) -> ValidatedInput:
         state = self.store.state(sid)
+        previous_corrections = list(getattr(state.validated, "manual_corrections", []) or [])
+        validated = self._validate_with_base(
+            paths,
+            self.active_base(sid).table,
+            manual_corrections=previous_corrections,
+        )
         state.validated = validated
-        state.last_source_names = [p.name for p in unique]
+        state.last_source_names = [path.name for path in validated.paths]
         return validated
 
     @staticmethod
@@ -660,12 +942,11 @@ class WebEngine:
             ],
         }
 
-    def generate(self, sid: str) -> dict[str, str]:
-        state = self.store.state(sid)
-        validated = state.validated
-        if validated is None:
-            raise RuntimeError("Valide os arquivos antes de gerar o relatório.")
-
+    def _build_report_artifacts(
+        self,
+        sid: str,
+        validated: ValidatedInput,
+    ) -> tuple[PreparedReportArtifacts, dict[str, str]]:
         output_dir = self.store.new_report_staging(sid)
         try:
             report = generate_report(validated.result, output_dir, [p.name for p in validated.paths])
@@ -674,9 +955,24 @@ class WebEngine:
                 raise RuntimeError("A geração terminou sem produzir todos os arquivos esperados.")
 
             script_hashes = optimize_report_file(report)
-            self.store.replace_report_artifacts(sid, output_dir, script_hashes)
+            prepared = self.store.prepare_report_artifacts(sid, output_dir, script_hashes)
         except Exception:
             shutil.rmtree(output_dir, ignore_errors=True)
             raise
 
-        return {"report_url": "/report/current", "pdf_url": "/report/Relatorio_Contas_a_Pagar.pdf"}
+        return prepared, {"report_url": "/report/current", "pdf_url": "/report/Relatorio_Contas_a_Pagar.pdf"}
+
+    def generate(self, sid: str) -> dict[str, str]:
+        state = self.store.state(sid)
+        validated = state.validated
+        if validated is None:
+            raise RuntimeError("Valide os arquivos antes de gerar o relatório.")
+
+        prepared, result = self._build_report_artifacts(sid, validated)
+        try:
+            self.store.activate_report_artifacts(sid, prepared)
+        except Exception:
+            self.store.discard_prepared_report(prepared)
+            raise
+
+        return result

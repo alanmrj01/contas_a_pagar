@@ -1,8 +1,9 @@
 (() => {
   'use strict';
 
-  const FIELDS = ['supplier_code', 'supplier', 'flow', 'category'];
-  const emptyRow = () => ({supplier_code:'', supplier:'', flow:'', category:''});
+  const FIELDS = ['supplier_code', 'supplier', 'flow', 'category', 'subcategory'];
+  const REQUIRED_FIELDS = ['supplier_code', 'supplier', 'flow', 'category'];
+  const emptyRow = () => ({supplier_code:'', supplier:'', flow:'', category:'', subcategory:''});
   const normalized = value => String(value ?? '').trim().toLocaleLowerCase('pt-BR');
   const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
   const isInteractiveTarget = target => Boolean(target.closest('input,select,textarea,button,a,label,[contenteditable="true"],[role="button"]'));
@@ -220,7 +221,7 @@
 
     function getItems() {
       const result = items.map(item => Object.fromEntries(FIELDS.map(field => [field, String(item[field] ?? '').trim()])));
-      const invalidIndex = result.findIndex(item => FIELDS.some(field => !item[field]));
+      const invalidIndex = result.findIndex(item => REQUIRED_FIELDS.some(field => !item[field]));
       if (invalidIndex >= 0) throw new Error(`Preencha Cód Fornecedor, Fornecedor, Fluxo JMM e Categoria na linha ${invalidIndex + 1}.`);
       return result;
     }

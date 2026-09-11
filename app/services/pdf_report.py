@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from pathlib import Path
 from textwrap import wrap
 
@@ -9,7 +8,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 
-from .metrics import aggregate_suppliers, chart_data, summarize
+from .metrics import aggregate_suppliers, chart_data, least_squares_trend, summarize
 from .reconciler import ReconcileResult
 
 BLUE = HexColor("#234865")
@@ -18,15 +17,13 @@ ACCENT = HexColor("#65A9D5")
 ACCENT2 = HexColor("#8ED1FF")
 TEXT = HexColor("#173047")
 MUTED = HexColor("#425D6F")
-GOOD = HexColor("#3A9E76")
-BAD = HexColor("#D85F65")
-WARN = HexColor("#D49B39")
 LIGHT = HexColor("#F2F6F9")
 LINE = HexColor("#D6E1E8")
 PASTEL = [
-    HexColor("#8EC5E8"), HexColor("#F1B6A8"), HexColor("#A8D8C5"),
-    HexColor("#D4C0E8"), HexColor("#EBCB88"), HexColor("#8FCCD1"),
-    HexColor("#C7D89B"), HexColor("#E4B8CF"),
+    HexColor("#7DB8DA"), HexColor("#E3A589"), HexColor("#89C9AF"),
+    HexColor("#C7B2E0"), HexColor("#DDB866"), HexColor("#78BCC6"),
+    HexColor("#B7D171"), HexColor("#D8A8C4"), HexColor("#9CB7F0"),
+    HexColor("#F0C39C"),
 ]
 MONTHS_PT = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"]
 
@@ -91,19 +88,11 @@ def _mix_color(color, target, ratio: float):
     )
 
 
-def _category_series_colors(item: dict):
-    families = (
-        {
-            "planned": (HexColor("#B9DCED"), HexColor("#315F78")),
-            "actual": (HexColor("#68AFC2"), HexColor("#3E7088")),
-        },
-        {
-            "planned": (HexColor("#F3CCBA"), HexColor("#8D5B47")),
-            "actual": (HexColor("#D98F73"), HexColor("#8D4E3B")),
-        },
-    )
-    family = families[min(int(item.get("month_index") or 0), len(families) - 1)]
-    return family["planned" if item.get("mark") == "P" else "actual"]
+def _category_series_colors(item: dict, category: str = ""):
+    if item.get("mark") == "P":
+        return HexColor("#AEB8C2"), HexColor("#687785")
+    fill = _supplier_color(category)
+    return fill, _mix_color(fill, HexColor("#17384D"), .42)
 
 
 def _text(c: canvas.Canvas, x: float, y: float, text: str, size: float = 9, color=TEXT, bold=False):
@@ -221,8 +210,8 @@ def _category_chart(c, x, y, w, h, rows):
     span = domain_max - domain_min or 1.0
     left = x + 172
     right = x + w - 96
-    bottom = y + 8
-    top = y + h - 34
+    bottom = y + 43
+    top = y + h - 16
     plot_w = right - left
     row_h = (top - bottom) / max(1, len(rows))
 
@@ -243,17 +232,6 @@ def _category_chart(c, x, y, w, h, rows):
         c.setFont("Helvetica-Bold", font_size)
         c.setFillColor(TEXT)
         c.drawCentredString(bx + bubble_w / 2, cy - 2.65, label)
-
-    legend_items = rows[0]["series"]
-    legend_slot = (w - 8) / max(1, len(legend_items))
-    for legend_index, item in enumerate(legend_items):
-        fill_color, stroke_color = _category_series_colors(item)
-        legend_x = x + 4 + legend_index * legend_slot
-        c.setFillColor(fill_color)
-        c.setStrokeColor(stroke_color)
-        c.setLineWidth(2.0 if item["mark"] == "P" else .85)
-        c.roundRect(legend_x, y + h - 17, 13, 9, 2, fill=1, stroke=1)
-        _text(c, legend_x + 17, y + h - 16, item["label"], 6.5, MUTED, True)
 
     for i in range(6):
         value = domain_min + span * i / 5
@@ -279,7 +257,7 @@ def _category_chart(c, x, y, w, h, rows):
             bar_x = min(zero_x, endpoint)
             bar_w = max(1.0, abs(endpoint - zero_x))
             planned = item["mark"] == "P"
-            fill_color, stroke_color = _category_series_colors(item)
+            fill_color, stroke_color = _category_series_colors(item, row["label"])
             c.setFillColor(fill_color)
             c.setStrokeColor(stroke_color)
             c.setLineWidth(2.0 if planned else .85)
@@ -292,112 +270,23 @@ def _category_chart(c, x, y, w, h, rows):
         c.setLineWidth(.35)
         c.line(x + 1, row_top - row_h + 2, x + w - 1, row_top - row_h + 2)
 
-
-def _line_chart(c, x, y, w, h, rows):
-    if not rows:
-        _text(c, x, y + h / 2, "Sem dados temporais suficientes", 10, MUTED)
-        return
-
-    monthly: dict[str, dict] = {}
-    for row in rows:
-        key = str(row["date"])[:7]
-        monthly[key] = row
-    rows = [monthly[key] for key in sorted(monthly)]
-
-    maxv = max(max(float(r["planned"]), float(r["actual"])) for r in rows) or 1
-    left, bottom = x + 49, y + 38
-    pw, ph = w - 62, h - 72
-
-    for i in range(5):
-        yy = bottom + ph * i / 4
-        value = maxv * i / 4
-        c.setStrokeColor(LINE)
+    legend = [("Previsto", HexColor("#AEB8C2"), HexColor("#687785"))]
+    legend.extend(
+        (f"Realizado - {row['label']}", _supplier_color(row["label"]), _mix_color(_supplier_color(row["label"]), HexColor("#17384D"), .42))
+        for row in rows
+    )
+    columns = min(4, max(1, len(legend)))
+    slot = w / columns
+    for index, (label, fill, stroke) in enumerate(legend):
+        column = index % columns
+        line = index // columns
+        lx = x + column * slot
+        ly = y + 27 - line * 12
+        c.setFillColor(fill)
+        c.setStrokeColor(stroke)
         c.setLineWidth(.7)
-        c.line(left, yy, left + pw, yy)
-        c.setFont("Helvetica", 5.8)
-        c.setFillColor(MUTED)
-        c.drawRightString(left - 5, yy - 2, short_brl(value))
-
-    def px(index: int) -> float:
-        return left + (pw / 2 if len(rows) == 1 else pw * index / (len(rows) - 1))
-
-    def py(value: float) -> float:
-        return bottom + ph * value / maxv
-
-    for key, color in (("planned", ACCENT), ("actual", HexColor("#F1B6A8"))):
-        points = [(px(i), py(float(row[key]))) for i, row in enumerate(rows)]
-        c.setStrokeColor(color)
-        c.setLineWidth(2.2)
-        for a0, b0 in zip(points, points[1:]):
-            c.line(a0[0], a0[1], b0[0], b0[1])
-
-    years = {str(row["date"])[:4] for row in rows}
-    include_year = len(years) > 1
-    for i, row in enumerate(rows):
-        raw = str(row["date"])
-        year, month = raw[:7].split("-")
-        label = MONTHS_PT[int(month) - 1] + (f"/{year[-2:]}" if include_year else "")
-        xx = px(i)
-        yp, ya = py(float(row["planned"])), py(float(row["actual"]))
-        c.setFillColor(ACCENT)
-        c.circle(xx, yp, 3.1, fill=1, stroke=0)
-        c.setFillColor(HexColor("#F1B6A8"))
-        c.circle(xx, ya, 3.1, fill=1, stroke=0)
-        c.setFont("Helvetica-Bold", 4.7)
-        c.setFillColor(ACCENT)
-        p_y = min(y + h - 8, yp + 6)
-        a_y = min(y + h - 8, ya + 6)
-        if abs(p_y - a_y) < 7:
-            a_y = max(bottom + 3, ya - 8)
-        c.drawCentredString(xx, p_y, brl(float(row["planned"])))
-        c.setFillColor(HexColor("#C76E5C"))
-        c.drawCentredString(xx, a_y, brl(float(row["actual"])))
-        c.setStrokeColor(MUTED)
-        c.line(xx, bottom - 2, xx, bottom - 5)
-        c.setFont("Helvetica-Bold", 6.2)
-        c.setFillColor(MUTED)
-        c.drawCentredString(xx, y + 10, label)
-
-    c.setFillColor(ACCENT)
-    c.circle(x + w - 142, y + h - 9, 2.6, fill=1, stroke=0)
-    _text(c, x + w - 134, y + h - 12, "Previsto acumulado", 6.2, MUTED)
-    c.setFillColor(HexColor("#F1B6A8"))
-    c.circle(x + w - 66, y + h - 9, 2.6, fill=1, stroke=0)
-    _text(c, x + w - 58, y + h - 12, "Realizado", 6.2, MUTED)
-
-
-def _lollipop(c, x, y, w, h, rows):
-    rows = rows[:8]
-    if not rows:
-        _text(c, x, y + h / 2, "Sem dados", 10, MUTED)
-        return
-    maxv = max(abs(r["variance"]) for r in rows) or 1
-    label_w = 270
-    value_w = 96
-    plot_w = w - label_w - value_w
-    rh = h / len(rows)
-    zero = x + label_w + plot_w / 2
-    c.setStrokeColor(LINE)
-    c.setLineWidth(.8)
-    c.line(zero, y, zero, y + h)
-    for i, row in enumerate(rows):
-        yy = y + h - (i + .5) * rh
-        _text_fit(
-            c, x, yy - 3, row["supplier"], max_width=label_w - 8,
-            start_size=7.8, min_size=6.8, color=MUTED, bold=True,
-        )
-        dx = (plot_w / 2 - 10) * row["variance"] / maxv
-        # Solicitação visual: positivo em verde; negativo em coral/vermelho.
-        color = GOOD if row["variance"] >= 0 else BAD
-        c.setStrokeColor(color)
-        c.setLineWidth(3.2)
-        c.line(zero, yy, zero + dx, yy)
-        c.setFillColor(color)
-        c.circle(zero + dx, yy, 4.2, fill=1, stroke=0)
-        label = brl(float(row["variance"]))
-        c.setFont("Helvetica-Bold", 8.2)
-        c.setFillColor(color)
-        c.drawRightString(x + w, yy - 2, label)
+        c.roundRect(lx, ly, 10, 7, 1.5, fill=1, stroke=1)
+        _text_fit(c, lx + 13, ly + .5, label, max_width=slot - 16, start_size=5.5, min_size=4.6, color=MUTED, bold=True)
 
 
 def _monthly_comparison_rows(previsto, realizado):
@@ -419,14 +308,13 @@ def _monthly_comparison_chart(c, x, y, w, h, rows):
     if not rows:
         _text(c, x, y + h / 2, "Sem dados mensais", 10, MUTED)
         return
-    values = [float(row[key]) for row in rows for key in ("planned", "actual")]
+    trend = least_squares_trend([float(row["actual"]) for row in rows])
+    values = [float(row[key]) for row in rows for key in ("planned", "actual")] + trend
     domain_min = min(0.0, *values)
     domain_max = max(0.0, *values)
     span = domain_max - domain_min or 1.0
     left, right = x + 46, x + w - 8
-    # Reserva uma faixa superior exclusiva para a legenda; os balões monetários
-    # ficam acima das colunas, mas nunca alcançam essa faixa.
-    bottom, top = y + 31, y + h - 58
+    bottom, top = y + 46, y + h - 24
     plot_w, plot_h = right - left, top - bottom
 
     def yy(value: float) -> float:
@@ -447,7 +335,7 @@ def _monthly_comparison_chart(c, x, y, w, h, rows):
         center = left + slot * (index + .5)
         value_labels = []
         for series_index, (key, fill, stroke) in enumerate((
-            ("planned", HexColor("#B8DCED"), HexColor("#315F78")),
+            ("planned", HexColor("#AEB8C2"), HexColor("#687785")),
             ("actual", HexColor("#E6A58F"), HexColor("#8D4E3B")),
         )):
             value = float(row[key])
@@ -477,23 +365,67 @@ def _monthly_comparison_chart(c, x, y, w, h, rows):
             c.drawCentredString(center, label_y + 4.1, label)
         month = str(row["month"])
         label = f"{MONTHS_PT[int(month[5:7]) - 1]}/{month[2:4]}"
-        _text(c, center - 11, y + 10, label, 6.2, MUTED, True)
+        _text(c, center - 11, y + 27, label, 6.2, MUTED, True)
 
-    c.setFillColor(HexColor("#B8DCED"))
-    c.setStrokeColor(HexColor("#315F78"))
-    c.roundRect(x + w - 158, y + h - 14, 12, 8, 2, fill=1, stroke=1)
-    _text(c, x + w - 142, y + h - 13, "Previsto", 6.2, MUTED, True)
+    c.setStrokeColor(HexColor("#2F88B8"))
+    c.setLineWidth(1.8)
+    points = [
+        (left + slot * (index + .5), yy(value))
+        for index, value in enumerate(trend)
+    ]
+    for index in range(1, len(points)):
+        c.line(points[index - 1][0], points[index - 1][1], points[index][0], points[index][1])
+    for point_x, point_y in points:
+        c.setFillColor(white)
+        c.circle(point_x, point_y, 2.2, fill=1, stroke=1)
+
+    c.setFillColor(HexColor("#AEB8C2"))
+    c.setStrokeColor(HexColor("#687785"))
+    c.roundRect(x + 95, y + 5, 12, 8, 2, fill=1, stroke=1)
+    _text(c, x + 111, y + 6, "Previsto", 6.2, MUTED, True)
     c.setFillColor(HexColor("#E6A58F"))
     c.setStrokeColor(HexColor("#8D4E3B"))
-    c.roundRect(x + w - 82, y + h - 14, 12, 8, 2, fill=1, stroke=1)
-    _text(c, x + w - 66, y + h - 13, "Realizado", 6.2, MUTED, True)
+    c.roundRect(x + 181, y + 5, 12, 8, 2, fill=1, stroke=1)
+    _text(c, x + 197, y + 6, "Realizado", 6.2, MUTED, True)
+    c.setStrokeColor(HexColor("#2F88B8"))
+    c.setLineWidth(1.8)
+    c.line(x + 273, y + 9, x + 291, y + 9)
+    _text(c, x + 297, y + 6, "Tendência do Realizado", 6.2, MUTED, True)
+
+
+def _monthly_local_kpis(c, x, y, w, h, rows):
+    planned = sum(float(row["planned"]) for row in rows)
+    actual = sum(float(row["actual"]) for row in rows)
+    variance = actual - planned
+    variation = variance / planned * 100 if planned else None
+    cards = (
+        ("Previsto total", brl(planned)),
+        ("Realizado total", brl(actual)),
+        ("Desvio total", brl(variance)),
+        ("Variação total", pct(variation)),
+    )
+    gap = 7
+    card_h = (h - gap * 3) / 4
+    for index, (label, value) in enumerate(cards):
+        card_y = y + h - (index + 1) * card_h - index * gap
+        _kpi(c, x, card_y, w, card_h, label, value, "")
+
+
+def _period_chip(c, x, y, text):
+    label = str(text or "Sem mês válido")
+    width = min(245, max(70, pdfmetrics.stringWidth(label, "Helvetica-Bold", 6.3) + 18))
+    c.setFillColor(white)
+    c.setStrokeColor(HexColor("#9FB1BD"))
+    c.setLineWidth(.6)
+    c.roundRect(x, y, width, 15, 7, fill=1, stroke=1)
+    _text_fit(c, x + 9, y + 4.3, label, max_width=width - 18, start_size=6.3, min_size=5.2, color=MUTED, bold=True)
 
 
 def _waterfall(c, x, y, w, h, rows, start):
     rows = list(rows)
-    if len(rows) > 5:
-        others = rows[5:]
-        rows = rows[:5] + [{"label": "Outros fluxos", "variance": sum(float(r["variance"]) for r in others)}]
+    if len(rows) > 8:
+        others = rows[8:]
+        rows = rows[:8] + [{"label": "Outras categorias", "variance": sum(float(r["variance"]) for r in others)}]
     if not rows:
         _text(c, x, y + h / 2, "Sem dados", 10, MUTED)
         return
@@ -510,7 +442,7 @@ def _waterfall(c, x, y, w, h, rows, start):
 
     left = x + 48
     right = x + w - 5
-    bottom = y + 43
+    bottom = y + 56
     top = y + h - 7
     pw = right - left
     ph = top - bottom
@@ -546,7 +478,8 @@ def _waterfall(c, x, y, w, h, rows, start):
     zero_y = yy(0)
     start_x = left + slot * .2
     start_y = yy(start)
-    c.setFillColor(ACCENT)
+    c.setFillColor(HexColor("#AEB8C2"))
+    c.setStrokeColor(HexColor("#687785"))
     c.roundRect(start_x, min(zero_y, start_y), bw, max(3, abs(start_y - zero_y)), 2.5, fill=1, stroke=0)
     value_bubble(start_x + bw / 2, max(zero_y, start_y) + 4, brl(float(start)))
     _text(c, start_x, y + 13, "Previsto", 5.8, MUTED, True)
@@ -561,7 +494,7 @@ def _waterfall(c, x, y, w, h, rows, start):
         c.setDash(2, 2)
         c.line(x0 - slot + bw, y1, x0, y1)
         c.setDash()
-        bar_color = BAD if value >= 0 else GOOD
+        bar_color = HexColor("#78B7DB") if value >= 0 else HexColor("#DF8588")
         c.setFillColor(bar_color)
         c.roundRect(x0, min(y1, y2), bw, max(3, abs(y2 - y1)), 2.5, fill=1, stroke=0)
         value_y = (max(y1, y2) + 4 + (8 if i % 2 else 0)) if value >= 0 else (min(y1, y2) - 14 - (8 if i % 2 else 0))
@@ -574,124 +507,65 @@ def _waterfall(c, x, y, w, h, rows, start):
 
     final_x = left + (len(rows) + 1) * slot + slot * .2
     final_y = yy(actual)
-    c.setFillColor(HexColor("#9CD8FF"))
+    c.setFillColor(HexColor("#DF8588") if actual - float(start) < 0 else HexColor("#78B7DB"))
     c.roundRect(final_x, min(zero_y, final_y), bw, max(3, abs(final_y - zero_y)), 2.5, fill=1, stroke=0)
     value_bubble(final_x + bw / 2, max(zero_y, final_y) + 4, brl(float(actual)), stagger=bool(len(rows) % 2))
     c.setFont("Helvetica-Bold", 5.8)
     c.setFillColor(MUTED)
     c.drawCentredString(final_x + bw / 2, y + 13, "Realizado")
 
-
-
-def _monthly_supplier_category_chart(c, x, y, w, h, rows):
-    """Resumo A4: mês + fornecedor + Fluxo JMM + Categoria + comparação mensal."""
-    if not rows:
-        _text(c, x, y + h / 2, "Sem dados mensais com data válida", 9, MUTED)
-        return
-
-    rows = sorted(rows, key=lambda r: max(abs(float(r["planned"])), abs(float(r["actual"]))), reverse=True)[:10]
-    maxv = max(max(abs(float(r["planned"])), abs(float(r["actual"]))) for r in rows) or 1.0
-    cols = 2
-    gap_x, gap_y = 10, 9
-    card_w = (w - gap_x) / cols
-    rows_count = math.ceil(len(rows) / cols)
-    card_h = min(105, (h - gap_y * max(0, rows_count - 1)) / max(1, rows_count))
-    years = {str(r["month"])[:4] for r in rows}
-    include_year = len(years) > 1
-
-    for i, row in enumerate(rows):
-        col = i % cols
-        rr = i // cols
-        cx = x + col * (card_w + gap_x)
-        cy = y + h - (rr + 1) * card_h - rr * gap_y
-        supplier_color = _supplier_color(str(row["supplier"]))
-
-        c.setFillColor(HexColor("#F8FAFC"))
-        c.setStrokeColor(LINE)
-        c.setLineWidth(.8)
-        c.roundRect(cx, cy, card_w, card_h, 7, fill=1, stroke=1)
-        c.setFillColor(supplier_color)
-        c.roundRect(cx, cy, 3.2, card_h, 1.5, fill=1, stroke=0)
-
-        month = str(row["month"])
-        year, month_num = month.split("-")
-        month_label = MONTHS_PT[int(month_num) - 1] + (f"/{year[-2:]}" if include_year else "")
-        _text(c, cx + 10, cy + card_h - 15, str(row["supplier"])[:31], 6.8, supplier_color, True)
-        c.setFont("Helvetica-Bold", 5.6)
-        c.setFillColor(MUTED)
-        c.drawRightString(cx + card_w - 9, cy + card_h - 15, month_label)
-        _text(c, cx + 10, cy + card_h - 28, f"Fluxo JMM: {str(row.get('flow') or 'Não classificado')[:28]}", 5.4, MUTED, True)
-        _text(c, cx + 10, cy + card_h - 39, f"Categoria: {str(row.get('category') or 'Não classificado')[:29]}", 5.4, MUTED)
-
-        metrics = (
-            ("Previsto", float(row["planned"]), ACCENT),
-            ("Realizado", float(row["actual"]), HexColor("#F1B6A8")),
-        )
-        for j, (name, value, color) in enumerate(metrics):
-            yy = cy + card_h - 56 - j * 17
-            _text(c, cx + 10, yy, name, 5.5, MUTED, True)
-            _text_fit(c, cx + card_w - 10, yy, brl(value), max_width=card_w * .58, start_size=5.9, min_size=4.7, color=TEXT, bold=True, align="right")
-            track_y = yy - 7
-            track_w = card_w - 20
-            c.setFillColor(HexColor("#E9EFF3"))
-            c.roundRect(cx + 10, track_y, track_w, 4.5, 2.2, fill=1, stroke=0)
-            fill_w = track_w * abs(value) / maxv if value else 0
-            c.setFillColor(color)
-            c.roundRect(cx + 10, track_y, max(1.1 if value else 0, fill_w), 4.5, 2.2, fill=1, stroke=0)
-
-        if row.get("has_previous"):
-            dp = float(row.get("planned_mom_delta") or 0)
-            dr = float(row.get("actual_mom_delta") or 0)
-            prev = str(row.get("previous_month") or "")
-            py, pm = prev.split("-") if "-" in prev else ("", "")
-            prev_label = MONTHS_PT[int(pm) - 1] + (f"/{py[-2:]}" if include_year and py else "") if pm else "mês anterior"
-            _text_fit(c, cx + 10, cy + 8, f"vs {prev_label}: P {brl(dp)} | R {brl(dr)}", max_width=card_w - 20, start_size=5.3, min_size=4.2, color=MUTED, bold=True)
-        else:
-            _text_fit(c, cx + 10, cy + 8, "Comparação mensal: sem registro equivalente no mês anterior", max_width=card_w - 20, start_size=5.0, min_size=4.0, color=MUTED)
-
-def _donut(c, x, y, size, counts):
-    # Compatibilidade com relatórios gerados por versões anteriores.
-    counts = dict(counts)
-    if "No vencimento" in counts and "Dentro do Prazo" not in counts:
-        counts["Dentro do Prazo"] = counts.pop("No vencimento")
-    total = sum(counts.values()) or 1
-    colors = {"Antecipado": ACCENT, "Dentro do Prazo": GOOD, "Atrasado": BAD, "Sem data": WARN}
-    start_angle = 90
-    order = ["Antecipado", "Dentro do Prazo", "Atrasado", "Sem data"]
-    for name in order:
-        n = counts.get(name, 0)
-        if not n:
-            continue
-        extent = 360 * n / total
-        c.setFillColor(colors[name])
-        c.setStrokeColor(white)
-        c.wedge(x, y, x + size, y + size, start_angle, extent, fill=1, stroke=1)
-        start_angle += extent
-    inner = size * .54
-    c.setFillColor(white)
-    c.circle(x + size / 2, y + size / 2, inner / 2, fill=1, stroke=0)
-    c.setFont("Helvetica-Bold", 12)
-    c.setFillColor(BLUE)
-    c.drawCentredString(x + size / 2, y + size / 2 + 1, str(total))
-    _text(c, x + size / 2 - 16, y + size / 2 - 12, "títulos", 6.2, MUTED)
-    legend_x = x + size + 18
-    legend_y = y + size - 12
-    for name in order:
-        n = counts.get(name, 0)
-        if n:
-            c.setFillColor(colors[name])
-            c.circle(legend_x, legend_y + 2, 3, fill=1, stroke=0)
-            percentage = n / total * 100
-            _text(c, legend_x + 9, legend_y, f"{name}: {n} ({percentage:.1f}%)".replace(".", ","), 7.3, MUTED)
-            legend_y -= 16
-
+    legend = (
+        ("Previsto", HexColor("#AEB8C2")),
+        ("Contribuição positiva", HexColor("#78B7DB")),
+        ("Contribuição negativa", HexColor("#DF8588")),
+        ("Realizado", HexColor("#78B7DB" if actual - float(start) >= 0 else "#DF8588")),
+    )
+    legend_slot = w / len(legend)
+    for index, (label, color) in enumerate(legend):
+        lx = x + index * legend_slot
+        c.setFillColor(color)
+        c.roundRect(lx, y + 1, 10, 7, 1.5, fill=1, stroke=0)
+        _text_fit(c, lx + 13, y + 1.5, label, max_width=legend_slot - 15, start_size=5.4, min_size=4.6, color=MUTED, bold=True)
 
 
 
 def _cell_lines(value: object, width: float, font_size: float) -> list[str]:
     text = str(value if value not in (None, '') else '—')
-    approx_chars = max(4, int(width / max(2.8, font_size * 0.54)))
-    return wrap(text, width=approx_chars, break_long_words=True, break_on_hyphens=True) or ['—']
+    available = max(8.0, width)
+    lines: list[str] = []
+    current = ''
+
+    def fits(candidate: str) -> bool:
+        return pdfmetrics.stringWidth(candidate, 'Helvetica', font_size) <= available
+
+    def split_long_word(word: str) -> tuple[list[str], str]:
+        chunks: list[str] = []
+        remaining = word
+        while remaining and not fits(remaining):
+            cut = 1
+            while cut < len(remaining) and fits(remaining[:cut + 1]):
+                cut += 1
+            chunks.append(remaining[:cut])
+            remaining = remaining[cut:]
+        return chunks, remaining
+
+    for paragraph_index, paragraph in enumerate(text.splitlines() or ['']):
+        if paragraph_index and current:
+            lines.append(current)
+            current = ''
+        for word in paragraph.split() or ['']:
+            candidate = f'{current} {word}'.strip()
+            if fits(candidate):
+                current = candidate
+                continue
+            if current:
+                lines.append(current)
+                current = ''
+            chunks, current = split_long_word(word)
+            lines.extend(chunks)
+    if current or not lines:
+        lines.append(current or '—')
+    return lines
 
 
 def _paginated_table(
@@ -801,63 +675,49 @@ def generate_pdf(result: ReconcileResult, destination: str | Path) -> Path:
         w, h = _new_page(c, "Gráficos financeiros", result.period_label, page)
         suffix = f" ({chunk_index + 1}/{len(category_chunks)})" if len(category_chunks) > 1 else ""
         _text(c, 36, h - 98, f"1. Previsto x Realizado por categoria{suffix}", 10, BLUE, True)
-        month_note = " x ".join(category_months) if category_months else "sem mês disponível"
-        _text(c, 18, h - 112, f"Barras horizontais ({month_note}); todos os valores exatos aparecem em rótulos de alto contraste.", 7.2, MUTED)
-        _category_chart(c, 18, 48, w - 36, h - 178, chunk)
+        _period_chip(c, 315, h - 105, " e ".join(category_months) if category_months else "Sem mês válido")
+        _category_chart(c, 18, 48, w - 36, h - 170, chunk)
         c.showPage()
-
-    page += 1
-    w, h = _new_page(c, "Comparativo mensal por fornecedor", result.period_label, page)
-    _text(c, 36, h - 98, "2. Previsto x Realizado por fornecedor, Fluxo JMM e Categoria", 10, BLUE, True)
-    _text(c, 36, h - 112, "Resumo visual das maiores relações. O detalhamento mensal completo, sem barras de rolagem, segue nas páginas seguintes.", 6.3, MUTED)
-    _monthly_supplier_category_chart(c, 36, h - 720, w - 72, 565, charts["monthly_supplier_category"])
-    c.showPage()
-
-    monthly_rows = []
-    for row in charts["monthly_supplier_category"]:
-        if row.get("has_previous"):
-            previous = f"Previsto {brl(float(row.get('planned_mom_delta') or 0))}; Realizado {brl(float(row.get('actual_mom_delta') or 0))}"
-        else:
-            previous = "Sem a mesma relação no mês anterior"
-        monthly_rows.append([
-            str(row.get("month") or "—"),
-            row.get("supplier") or "Sem fornecedor",
-            row.get("flow") or "Não classificado",
-            row.get("category") or "Não classificado",
-            brl(float(row.get("planned") or 0)),
-            brl(float(row.get("actual") or 0)),
-            previous,
-        ])
-    page = _paginated_table(
-        c, "Comparativo mensal completo", result.period_label, page,
-        ["Mês", "Fornecedor", "Fluxo JMM", "Categoria", "Previsto", "Realizado", "Comparação com mês anterior"],
-        [42, 105, 62, 67, 67, 67, 113],
-        monthly_rows, font_size=5.35, leading=6.2,
-    )
 
     monthly_comparison = _monthly_comparison_rows(result.previsto, result.realizado)
-    # Seis meses por página preservam espaço horizontal suficiente para os dois
-    # balões monetários de cada mês sem ocultar qualquer valor no PDF.
     monthly_chunks = [monthly_comparison[index:index + 6] for index in range(0, len(monthly_comparison), 6)] or [[]]
-    page += 1
-    w, h = _new_page(c, "Comparações financeiras", result.period_label, page)
-    _text(c, 36, h - 98, "3. Maiores desvios por fornecedor", 10, BLUE, True)
-    _lollipop(c, 36, h - 365, w - 72, 240, suppliers)
-    _text(c, 36, h - 405, "4. Previsto x Realizado por mês", 10, BLUE, True)
-    _text(c, 36, h - 418, "Todos os meses disponíveis; valores exatos visíveis para Previsto e Realizado.", 6.2, MUTED)
-    _monthly_comparison_chart(c, 36, h - 720, w - 72, 280, monthly_chunks[0])
-    c.showPage()
-
-    for chunk_index, chunk in enumerate(monthly_chunks[1:], start=2):
+    for chunk_index, chunk in enumerate(monthly_chunks, start=1):
         page += 1
         w, h = _new_page(c, "Previsto x Realizado por mês", result.period_label, page)
-        _text(c, 36, h - 98, f"4. Previsto x Realizado por mês ({chunk_index}/{len(monthly_chunks)})", 10, BLUE, True)
-        _monthly_comparison_chart(c, 36, 70, w - 72, h - 190, chunk)
+        suffix = f" ({chunk_index}/{len(monthly_chunks)})" if len(monthly_chunks) > 1 else ""
+        _text(c, 36, h - 98, f"2. Previsto x Realizado por mês{suffix}", 10, BLUE, True)
+        shown_months = [
+            f"{MONTHS_PT[int(str(row['month'])[5:7]) - 1]}/{str(row['month'])[2:4]}"
+            for row in chunk
+        ]
+        _period_chip(c, 315, h - 105, ", ".join(shown_months) if shown_months else "Sem mês válido")
+        chart_x, chart_y, chart_h = 30, 92, h - 225
+        kpi_w, gap = 132, 12
+        chart_w = w - 60 - kpi_w - gap
+        _monthly_comparison_chart(c, chart_x, chart_y, chart_w, chart_h, chunk)
+        _monthly_local_kpis(c, chart_x + chart_w + gap, chart_y, kpi_w, chart_h, chunk)
         c.showPage()
+
+    waterfall_data = charts["category_waterfall"]
+    waterfall_rows = [
+        {"label": row["label"], "variance": float(row["contribution"])}
+        for row in waterfall_data["steps"]
+    ]
+    page += 1
+    w, h = _new_page(c, "Previsto x Realizado por categoria - Cascata", result.period_label, page)
+    _text(c, 36, h - 98, "3. Previsto x Realizado por categoria - Cascata", 10, BLUE, True)
+    waterfall_months = [
+        f"{MONTHS_PT[int(str(row['month'])[5:7]) - 1]}/{str(row['month'])[2:4]}"
+        for row in monthly_comparison
+    ]
+    _period_chip(c, 315, h - 105, ", ".join(waterfall_months) if waterfall_months else "Sem mês válido")
+    _waterfall(c, 24, 68, w - 48, h - 205, waterfall_rows, float(waterfall_data["planned"]))
+    c.showPage()
 
     supplier_rows = [[
         row.get("supplier") or "Sem fornecedor",
         row.get("category") or "Não classificado",
+        row.get("subcategory") or "",
         row.get("flow") or "Não classificado",
         brl(float(row.get("planned") or 0)),
         brl(float(row.get("actual") or 0)),
@@ -866,8 +726,8 @@ def generate_pdf(result: ReconcileResult, destination: str | Path) -> Path:
     ] for row in suppliers]
     page = _paginated_table(
         c, "Detalhamento completo por fornecedor", result.period_label, page,
-        ["Fornecedor", "Categoria", "Fluxo JMM", "Previsto", "Realizado", "Desvio", "Variação"],
-        [130, 70, 65, 66, 66, 66, 60],
+        ["Fornecedor", "Categoria", "Subcategoria", "Fluxo JMM", "Previsto", "Realizado", "Desvio", "Variação"],
+        [108, 58, 58, 55, 62, 62, 62, 58],
         supplier_rows, font_size=5.45, leading=6.3,
     )
 
@@ -877,6 +737,7 @@ def generate_pdf(result: ReconcileResult, destination: str | Path) -> Path:
         row.get("title") or "—",
         row.get("supplier") or "Sem fornecedor",
         row.get("category") or "Não classificado",
+        row.get("subcategory") or "",
         _iso_date(row.get("date")),
         _iso_date(row.get("due_date")),
         row.get("punctuality") or "—",
@@ -884,8 +745,8 @@ def generate_pdf(result: ReconcileResult, destination: str | Path) -> Path:
     ] for row in result.realizado]
     page = _paginated_table(
         c, "Títulos realizados - lista completa", result.period_label, page,
-        ["Origem", "Linha", "Título", "Fornecedor", "Categoria", "Pagamento", "Vencimento", "Pontualidade", "Valor"],
-        [64, 28, 88, 80, 52, 50, 50, 55, 56],
+        ["Origem", "Linha", "Título", "Fornecedor", "Categoria", "Subcategoria", "Pagamento", "Vencimento", "Pontualidade", "Valor"],
+        [63, 24, 77, 72, 48, 48, 42, 42, 48, 59],
         title_rows, font_size=5.0, leading=5.9,
     )
 

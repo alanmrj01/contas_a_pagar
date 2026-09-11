@@ -16,6 +16,7 @@
     pendingBaseUploadId: '',
     pendingBaseConflicts: [],
     baseItems: [],
+    baseRevision: '',
     baseEditing: false,
     baseTableController: null,
     security: null,
@@ -190,7 +191,9 @@
         await ensureSecurity(true);
         return api(url, options, true);
       }
-      throw new Error((payload && payload.detail) || `Falha HTTP ${response.status}`);
+      const error = new Error((payload && payload.detail) || `Falha HTTP ${response.status}`);
+      error.status = response.status;
+      throw error;
     }
     return payload;
   }
@@ -471,6 +474,7 @@
     try {
       await ensureSecurity();
       const result = await api('/api/state');
+      state.baseRevision = result.base.revision || '';
       el('baseInfo').textContent = `BASE DADOS ativa: ${result.base.rows} registros • ${result.base.origin}${result.base.revision && result.base.revision !== 'padrao' ? ` • revisão ${result.base.revision}` : ''}`;
       state.validated = !!result.validated;
       state.reportUrl = result.report_url || '';
@@ -496,7 +500,7 @@
   async function openBaseDialog() {
     if (state.busy) return;
     el('baseDialogInfo').textContent = 'Carregando BASE DADOS...';
-    el('baseTableBody').innerHTML = '<tr><td colspan="5">Carregando...</td></tr>';
+    el('baseTableBody').innerHTML = '<tr><td colspan="6">Carregando...</td></tr>';
     el('baseDialog').showModal();
     try {
       const data = await api('/api/base');
@@ -504,7 +508,7 @@
       state.baseEditing = false;
       renderBaseTable(data);
     } catch (error) {
-      el('baseTableBody').innerHTML = `<tr><td colspan="5" class="danger">${esc(error.message)}</td></tr>`;
+      el('baseTableBody').innerHTML = `<tr><td colspan="6" class="danger">${esc(error.message)}</td></tr>`;
     }
   }
 
@@ -529,7 +533,7 @@
         remove: el('removeBaseRowsBtn'),
         inputClass: 'base-cell-input',
         checkboxClass: 'base-row-check',
-        columns: 5,
+        columns: 6,
         pageSize: 200,
         showError: message => actionFeedback.error(message, 'base-editor'),
         onEditingChange: syncBaseEditing,
@@ -540,6 +544,7 @@
 
   function renderBaseTable(data = null) {
     if (data) {
+      state.baseRevision = data.revision || '';
       el('baseDialogInfo').textContent = `BASE DADOS ativa: ${data.rows} registros • ${data.origin}${data.revision && data.revision !== 'padrao' ? ` • revisão ${data.revision}` : ''}`;
     }
     getBaseTableController().load(state.baseItems);
@@ -556,15 +561,14 @@
     try {
       const items = collectEditedBase();
       const result = await api('/api/base', {
-        method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({items}),
+        method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({items, revision:state.baseRevision}),
       });
       state.baseEditing = false;
       await openBaseDialogRefresh();
       invalidateValidation('BASE DADOS alterada e salva com segurança. Os arquivos financeiros protegidos podem ser reprocessados sem novo envio.');
       actionFeedback.success(`Alterações salvas. A Base de Dados agora possui ${result.base.rows} registros.`, 'base-save');
     } catch (error) {
-      actionFeedback.error('Não foi possível salvar as alterações da Base de Dados.', 'base-save');
-      showGuidedError(errorGuide(error, 'base'));
+      await showBaseMutationError(error, 'base-save', 'Não foi possível salvar as alterações da Base de Dados.');
     } finally {
       setBusy(false);
     }
@@ -577,6 +581,7 @@
       body:JSON.stringify({
         upload_id:uploadId,
         mode,
+        revision:state.baseRevision,
         duplicate_action:duplicateAction,
         edited_duplicates:editedDuplicates,
       }),
@@ -607,9 +612,9 @@
     el('baseConflictBody').innerHTML = state.pendingBaseConflicts.map(item => {
       const sent = item.uploaded || {};
       const current = item.current || {};
-      const currentText = `${current.supplier_code || ''} • ${current.supplier || ''} • ${current.flow || ''} • ${current.category || ''}`;
+      const currentText = `${current.supplier_code || ''} • ${current.supplier || ''} • ${current.flow || ''} • ${current.category || ''} • ${current.subcategory || 'Sem subcategoria'}`;
       const input = (field) => `<input class="base-cell-input" data-conflict-row="${item.row_index}" data-field="${field}" value="${esc(sent[field] || '')}" />`;
-      return `<tr><td>${esc(item.reason)}</td><td>${input('supplier_code')}</td><td>${input('supplier')}</td><td>${input('flow')}</td><td>${input('category')}</td><td>${esc(currentText)}</td></tr>`;
+      return `<tr><td>${esc(item.reason)}</td><td>${input('supplier_code')}</td><td>${input('supplier')}</td><td>${input('flow')}</td><td>${input('category')}</td><td>${input('subcategory')}</td><td>${esc(currentText)}</td></tr>`;
     }).join('');
   }
 
@@ -630,8 +635,7 @@
     } catch (error) {
       if (uploadId) await discardUploads([uploadId]);
       state.pendingBaseUploadId = '';
-      actionFeedback.error('Não foi possível importar a Base de Dados.', 'base-import');
-      showGuidedError(errorGuide(error, 'base'));
+      await showBaseMutationError(error, 'base-import', 'Não foi possível importar a Base de Dados.');
     }
   }
 
@@ -642,6 +646,16 @@
       state.baseEditing = false;
       renderBaseTable(data);
     } catch (_) {}
+  }
+
+  async function showBaseMutationError(error, feedbackKey, fallbackMessage) {
+    if (error && error.status === 409) {
+      await openBaseDialogRefresh();
+      actionFeedback.error(error.message, feedbackKey);
+      return;
+    }
+    actionFeedback.error(fallbackMessage, feedbackKey);
+    showGuidedError(errorGuide(error, 'base'));
   }
 
   el('pickBtn').addEventListener('click', () => el('fileInput').click());
@@ -717,8 +731,7 @@
       const done = await submitBaseImport(state.pendingBaseUploadId, 'append', 'ignore');
       if (done) el('baseConflictDialog').close();
     } catch (error) {
-      actionFeedback.error('Não foi possível concluir a importação da Base de Dados.', 'base-import');
-      showGuidedError(errorGuide(error, 'base'));
+      await showBaseMutationError(error, 'base-import', 'Não foi possível concluir a importação da Base de Dados.');
     }
   });
   el('saveEditedConflictsBtn').addEventListener('click', async () => {
@@ -728,8 +741,7 @@
       const done = await submitBaseImport(state.pendingBaseUploadId, 'append', 'edit', collectEditedConflicts());
       if (done) el('baseConflictDialog').close();
     } catch (error) {
-      actionFeedback.error('Não foi possível concluir a importação da Base de Dados.', 'base-import');
-      showGuidedError(errorGuide(error, 'base'));
+      await showBaseMutationError(error, 'base-import', 'Não foi possível concluir a importação da Base de Dados.');
     }
   });
   async function cancelBaseConflicts() {

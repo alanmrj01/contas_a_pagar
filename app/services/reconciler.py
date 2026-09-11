@@ -29,6 +29,10 @@ def _safe_str(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _raw_text(value: Any) -> str:
+    return "" if value is None else str(value).strip()
+
+
 def normalize_supplier_code(value: Any) -> str:
     if value in (None, ""):
         return ""
@@ -106,6 +110,7 @@ def _build_base(base: TableData) -> tuple[dict[str, dict[str, Any]], dict[str, d
     c_name = find_column(base, "Fornecedor")
     c_flow = find_column(base, "Fluxo JMM", "Fluxo")
     c_cat = find_column(base, "Categoria")
+    c_subcat = find_column(base, "Subcategoria")
     by_code: dict[str, dict[str, Any]] = {}
     by_name: dict[str, dict[str, Any] | None] = {}
     for row in base.rows:
@@ -115,6 +120,7 @@ def _build_base(base: TableData) -> tuple[dict[str, dict[str, Any]], dict[str, d
             "norm": normalize_text(row.get(c_name)),
             "flow": _safe_str(row.get(c_flow)),
             "category": _safe_str(row.get(c_cat)),
+            "subcategory": _safe_str(row.get(c_subcat)) if c_subcat else "",
             "base_row": int(row.get("__source_row__") or 0),
         }
         by_code[entry["code"]] = entry
@@ -234,8 +240,10 @@ def reconcile(
     p_title = find_column(previsto_table, "Título Previsto", "Titulo Previsto")
     p_flow = find_column(previsto_table, "Fluxo JMM", "Fluxo")
     p_category = find_column(previsto_table, "Categoria")
+    p_subcategory = find_column(previsto_table, "Subcategoria")
     r_flow = find_column(realizado_table, "Fluxo JMM", "Fluxo")
     r_category = find_column(realizado_table, "Categoria")
+    r_subcategory = find_column(realizado_table, "Subcategoria")
     history_by_code = _build_import_history([
         (previsto_table, pc["code"], p_flow, p_category),
         (realizado_table, rc["code"], r_flow, r_category),
@@ -245,6 +253,7 @@ def reconcile(
     p_unclassified: list[dict[str, Any]] = []
     p_name_matches: list[dict[str, Any]] = []
     p_bad_dates: list[dict[str, Any]] = []
+    p_bad_values: list[dict[str, Any]] = []
     for row in previsto_table.rows:
         src = _source(row)
         code = _code(row.get(pc["code"]))
@@ -252,14 +261,24 @@ def reconcile(
         try:
             value = to_float(row.get(pc["value"]), field="Valor previsto")
         except ValueParseError as exc:
-            raise ReconcileError(
-                f"PREVISTO: valor inválido em {src['source_file']} > {src['source_sheet']} > "
-                f"linha {src['source_row']}: {exc}."
-            ) from exc
+            p_bad_values.append({
+                **src,
+                "title": _safe_str(row.get(p_title)) if p_title else "",
+                "supplier_code": code,
+                "supplier": source_name,
+                "field": "Valor previsto",
+                "value_kind": "number",
+                "raw_value": _raw_text(row.get(pc["value"])),
+                "problem": str(exc),
+            })
+            continue
         raw_date = row.get(pc["date"])
         parsed_date = to_date(raw_date)
         if raw_date not in (None, "") and parsed_date is None:
-            p_bad_dates.append({**src, "supplier_code": code, "supplier": source_name, "value": value, "raw_date": _safe_str(raw_date)})
+            p_bad_dates.append({
+                **src, "supplier_code": code, "supplier": source_name, "value": value,
+                "field": "Data prevista", "value_kind": "date", "raw_value": _raw_text(raw_date),
+            })
 
         direct = _classification_pair(row, p_flow, p_category)
         entry, match = _lookup_classification(
@@ -270,6 +289,7 @@ def reconcile(
             supplier = entry["name"]
             flow = entry["flow"]
             category = entry["category"]
+            subcategory = entry.get("subcategory") or (_safe_str(row.get(p_subcategory)) if p_subcategory else "")
             if match == "base_nome":
                 p_name_matches.append({**src, "supplier_code": code, "supplier": source_name, "matched_code": canonical_code, "matched_supplier": supplier})
         else:
@@ -277,6 +297,7 @@ def reconcile(
             supplier = source_name
             flow = "Não classificado"
             category = "Não classificado"
+            subcategory = _safe_str(row.get(p_subcategory)) if p_subcategory else ""
             p_unclassified.append({**src, "supplier_code": code, "supplier": source_name, "value": value, "suggestions": []})
 
         previsto.append({
@@ -290,6 +311,7 @@ def reconcile(
             "value": value,
             "flow": flow,
             "category": category,
+            "subcategory": subcategory,
             "match": match,
             "month_text": _safe_str(row.get(p_month)) if p_month else "",
             **src,
@@ -307,6 +329,7 @@ def reconcile(
     r_unclassified: list[dict[str, Any]] = []
     r_name_matches: list[dict[str, Any]] = []
     r_bad_dates: list[dict[str, Any]] = []
+    r_bad_values: list[dict[str, Any]] = []
     for row in realizado_table.rows:
         src = _source(row)
         code = _code(row.get(rc["code"]))
@@ -315,10 +338,17 @@ def reconcile(
         try:
             value = to_float(row.get(rc["value"]), field="Vlr.Original")
         except ValueParseError as exc:
-            raise ReconcileError(
-                f"REALIZADO: valor inválido em {src['source_file']} > {src['source_sheet']} > "
-                f"linha {src['source_row']}: {exc}."
-            ) from exc
+            r_bad_values.append({
+                **src,
+                "title": title,
+                "supplier_code": code,
+                "supplier": source_name,
+                "field": "Vlr.Original",
+                "value_kind": "number",
+                "raw_value": _raw_text(row.get(rc["value"])),
+                "problem": str(exc),
+            })
+            continue
 
         raw_paid = row.get(rc["paid"])
         raw_due = row.get(rc["due"])
@@ -326,16 +356,16 @@ def reconcile(
         paid = to_date(raw_paid)
         due = to_date(raw_due)
         emission = to_date(raw_emission)
-        if (
-            (raw_paid not in (None, "") and paid is None)
-            or (raw_due not in (None, "") and due is None)
-            or (raw_emission not in (None, "") and emission is None)
+        for field, raw, parsed in (
+            ("Ult. Pgto.", raw_paid, paid),
+            ("Vencimento", raw_due, due),
+            ("Emissão", raw_emission, emission),
         ):
-            r_bad_dates.append({
-                **src, "title": title, "supplier_code": code, "supplier": source_name, "value": value,
-                "raw_paid": _safe_str(raw_paid), "raw_due": _safe_str(raw_due),
-                "raw_emission": _safe_str(raw_emission),
-            })
+            if raw not in (None, "") and parsed is None:
+                r_bad_dates.append({
+                    **src, "title": title, "supplier_code": code, "supplier": source_name, "value": value,
+                    "field": field, "value_kind": "date", "raw_value": _raw_text(raw),
+                })
         punctuality = "Sem data"
         if paid and due:
             punctuality = "Antecipado" if paid < due else "Dentro do Prazo" if paid == due else "Atrasado"
@@ -349,6 +379,7 @@ def reconcile(
             supplier = entry["name"]
             flow = entry["flow"]
             category = entry["category"]
+            subcategory = entry.get("subcategory") or (_safe_str(row.get(r_subcategory)) if r_subcategory else "")
             if match == "base_nome":
                 r_name_matches.append({
                     **src, "title": title, "supplier_code": code, "supplier": source_name,
@@ -359,6 +390,7 @@ def reconcile(
             supplier = source_name
             flow = "Não classificado"
             category = "Não classificado"
+            subcategory = _safe_str(row.get(r_subcategory)) if r_subcategory else ""
             r_unclassified.append({
                 **src, "title": title, "supplier_code": code, "supplier": source_name,
                 "value": value, "suggestions": [],
@@ -377,6 +409,7 @@ def reconcile(
             "value": value,
             "flow": flow,
             "category": category,
+            "subcategory": subcategory,
             "match": match,
             "punctuality": punctuality,
             "company": _safe_str(row.get(r_company)) if r_company else "",
@@ -408,6 +441,18 @@ def reconcile(
     for warning in (grouped_unclassified(p_unclassified, "PREVISTO"), grouped_unclassified(r_unclassified, "REALIZADO")):
         if warning:
             warnings.append(warning)
+    if p_bad_values:
+        warnings.append(_warning(
+            "Valores inválidos no PREVISTO",
+            f"{len(p_bad_values)} registro(s) possuem Valor previsto ausente, ambíguo ou inválido e ficam fora dos totais até a correção explícita.",
+            p_bad_values,
+        ))
+    if r_bad_values:
+        warnings.append(_warning(
+            "Valores inválidos no REALIZADO",
+            f"{len(r_bad_values)} registro(s) possuem Vlr.Original ausente, ambíguo ou inválido e ficam fora dos totais até a correção explícita.",
+            r_bad_values,
+        ))
     if p_name_matches:
         warnings.append(_warning(
             "Classificação por nome exato no PREVISTO",

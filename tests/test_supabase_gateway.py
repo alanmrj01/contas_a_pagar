@@ -32,12 +32,16 @@ def test_base_is_encrypted_before_persistence_and_authenticated_on_load(monkeypa
     def request(method, endpoint, *, api_key, payload=None, extra_headers=None):
         if method == "POST":
             stored.update(payload)
-            return None
+            return [{"revision": payload["revision"]}]
         return [{key: stored[key] for key in ("ciphertext", "nonce", "revision", "row_count")}]
 
     monkeypatch.setattr(gateway, "_request_json", request)
-    items = [{"supplier_code": "42", "supplier": "FORNECEDOR SECRETO", "flow": "FLUXO A", "category": "CAT A"}]
-    revision = gateway.save_base("00000000-0000-0000-0000-000000000001", items)
+    items = [{"supplier_code": "42", "supplier": "FORNECEDOR SECRETO", "flow": "FLUXO A", "category": "CAT A", "subcategory": ""}]
+    revision = gateway.save_base(
+        "00000000-0000-0000-0000-000000000001",
+        items,
+        expected_revision="padrao",
+    )
     assert revision == stored["revision"]
     assert "FORNECEDOR SECRETO" not in stored["ciphertext"]
     assert gateway.load_base("00000000-0000-0000-0000-000000000001") == (items, revision)

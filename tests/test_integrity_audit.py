@@ -207,9 +207,13 @@ class _MemoryPersistence:
     def __init__(self):
         self.saved = None
 
-    def save_base(self, user_id, items):
+    def save_base(self, user_id, items, *, expected_revision):
+        assert expected_revision in {"padrao", "rev-1"}
         self.saved = ([dict(item) for item in items], "rev-1")
         return "rev-1"
+
+    def restore_base(self, user_id, previous_items, *, previous_revision, expected_revision):
+        self.saved = None if previous_items is None else ([dict(item) for item in previous_items], previous_revision)
 
     def load_base(self, user_id):
         return self.saved
@@ -233,16 +237,19 @@ class _MemoryStore:
     def invalidate_validation(self, sid, preserve_last_outputs=True):
         self.session.validated = None
 
+    def discard_prepared_report(self, prepared):
+        pass
+
 
 def test_base_edit_add_read_export_reload_and_invalid_update_preserves_previous_state(tmp_path):
     store = _MemoryStore(tmp_path)
     persistence = _MemoryPersistence()
     engine = WebEngine(Path(__file__).resolve().parents[1], store, persistence)
     items = [
-        {"supplier_code": "001", "supplier": "Fornecedor Um", "flow": "Fluxo A", "category": "Categoria A"},
-        {"supplier_code": "2", "supplier": "Fornecedor Dois", "flow": "Fluxo B", "category": "Categoria B"},
+        {"supplier_code": "001", "supplier": "Fornecedor Um", "flow": "Fluxo A", "category": "Categoria A", "subcategory": ""},
+        {"supplier_code": "2", "supplier": "Fornecedor Dois", "flow": "Fluxo B", "category": "Categoria B", "subcategory": ""},
     ]
-    info = engine.update_base("sid", items)
+    info = engine.update_base("sid", items, expected_revision="padrao")
     assert info["rows"] == 2
     assert engine.base_rows("sid")["items"] == items
     exported = engine.export_base("sid")
@@ -254,5 +261,9 @@ def test_base_edit_add_read_export_reload_and_invalid_update_preserves_previous_
     assert engine.base_rows("sid")["items"] == items
 
     with pytest.raises(Exception):
-        engine.update_base("sid", [items[0], {**items[1], "supplier_code": "001"}])
+        engine.update_base(
+            "sid",
+            [items[0], {**items[1], "supplier_code": "001"}],
+            expected_revision=engine.base_info("sid")["revision"],
+        )
     assert engine.base_rows("sid")["items"] == items

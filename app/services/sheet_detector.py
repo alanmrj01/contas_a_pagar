@@ -198,6 +198,7 @@ def _canonicalize(table: TableData, role: str) -> TableData:
             "Mês": ("Mês", "Mes"),
             "Fluxo JMM": ("Fluxo JMM", "Fluxo"),
             "Categoria": ("Categoria",),
+            "Subcategoria": ("Subcategoria",),
         },
         "realizado": {
             "Título": ("Título", "Titulo"),
@@ -215,6 +216,7 @@ def _canonicalize(table: TableData, role: str) -> TableData:
             "Desc. Centro de Custo": ("Desc. Centro de Custo", "Desc Centro de Custo"),
             "Fluxo JMM": ("Fluxo JMM", "Fluxo"),
             "Categoria": ("Categoria",),
+            "Subcategoria": ("Subcategoria",),
         },
     }[role]
     mapping = {canonical: find_column(table, *alts) for canonical, alts in aliases.items()}
@@ -254,6 +256,7 @@ def _split_consolidated_fc(table: TableData) -> tuple[TableData, TableData, list
     c_month = find_column(table, "Mês", "Mes")
     c_flow = find_column(table, "Fluxo JMM", "Fluxo")
     c_category = find_column(table, "Categoria")
+    c_subcategory = find_column(table, "Subcategoria")
 
     assert value_columns is not None
     value_layout, c_prev, c_real = value_columns
@@ -278,6 +281,8 @@ def _split_consolidated_fc(table: TableData) -> tuple[TableData, TableData, list
                 row["Fluxo JMM"] = original.get(c_flow)
             if c_category:
                 row["Categoria"] = original.get(c_category)
+            if c_subcategory:
+                row["Subcategoria"] = original.get(c_subcategory)
             p_rows.append(row)
         elif status == "REALIZADO":
             row = dict(original)
@@ -287,12 +292,11 @@ def _split_consolidated_fc(table: TableData) -> tuple[TableData, TableData, list
             row["Nome Fornecedor"] = original.get(c_name)
             try:
                 raw_actual = to_float(original.get(c_real), field="Realizado")
-            except ValueParseError as exc:
-                src_row = int(original.get("__source_row__") or 0)
-                raise SheetDetectionError(
-                    f"Na aba '{table.sheet_name}', linha {src_row}, o valor da coluna Realizado não é válido: {exc}."
-                ) from exc
-            row["Vlr.Original"] = abs(raw_actual)
+                row["Vlr.Original"] = abs(raw_actual)
+            except ValueParseError:
+                # A reconciliação central registra a origem e disponibiliza a
+                # correção manual sem converter ausência/ambiguidade em zero.
+                row["Vlr.Original"] = original.get(c_real)
             # O layout consolidado não possui uma coluna de emissão separada.
             # A própria Data é a referência temporal segura disponível para o
             # realizado e, portanto, também alimenta o filtro de competência.
@@ -303,6 +307,8 @@ def _split_consolidated_fc(table: TableData) -> tuple[TableData, TableData, list
                 row["Fluxo JMM"] = original.get(c_flow)
             if c_category:
                 row["Categoria"] = original.get(c_category)
+            if c_subcategory:
+                row["Subcategoria"] = original.get(c_subcategory)
             r_rows.append(row)
         elif status:
             unknown_status += 1
@@ -310,14 +316,14 @@ def _split_consolidated_fc(table: TableData) -> tuple[TableData, TableData, list
     source = table.source_path
     p = TableData(
         sheet_name=f"{table.sheet_name} • PREVISTO",
-        headers=["Título Previsto", "Cód Fornecedor", "Fornecedor", "Data prevista", "Valor previsto", "Mês", "Fluxo JMM", "Categoria"],
+        headers=["Título Previsto", "Cód Fornecedor", "Fornecedor", "Data prevista", "Valor previsto", "Mês", "Fluxo JMM", "Categoria", "Subcategoria"],
         rows=p_rows,
         source_path=source,
         header_row=table.header_row,
     )
     r = TableData(
         sheet_name=f"{table.sheet_name} • REALIZADO",
-        headers=["Título", "Fornecedor", "Nome Fornecedor", "Vlr.Original", "Emissão", "Ult. Pgto.", "Vencimento", "Fluxo JMM", "Categoria"],
+        headers=["Título", "Fornecedor", "Nome Fornecedor", "Vlr.Original", "Emissão", "Ult. Pgto.", "Vencimento", "Fluxo JMM", "Categoria", "Subcategoria"],
         rows=r_rows,
         source_path=source,
         header_row=table.header_row,
