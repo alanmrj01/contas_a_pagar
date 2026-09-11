@@ -43,8 +43,8 @@
     },
     "app/services/pdf_report.py": {
       "desktop_2_0_2_sha256": "E31AA54DAA3F12B24EBD798C052A7930529E37906C53CF2CBA419522BF40F763",
-      "current_sha256": "5713838155E984522E58B8FC26FC552CD8051DFE5D72B896A16C26A0E22CB66D",
-      "reason": "Alterações cirúrgicas aprovadas no PDF: gráfico mensal em largura útil com quatro KPIs e tendência OLS do Realizado, cascata por categoria com fechamento exato e cores semânticas, Previsto cinza, Realizado por categoria em paleta pastel estável, Subcategoria nas tabelas e quebra medida de textos longos sem corte ou sobreposição."
+      "current_sha256": "E10198575A0EA6C708056D36ED9FE582EBDDBD99EB1AB122273D23944F166CFF",
+      "reason": "Alterações cirúrgicas aprovadas no PDF: gráfico mensal em largura útil com quatro KPIs e tendência OLS do Realizado, posicionamento adaptativo dos rótulos sem colisão com a tendência, cascata por categoria com fechamento exato e rótulos no mesmo padrão de alto contraste, legenda P/R simplificada, título com subtítulo dinâmico do período, Previsto cinza, Realizado por categoria em paleta pastel estável, Subcategoria nas tabelas e quebra medida de textos longos sem corte ou sobreposição."
     },
     "app/services/reconciler.py": {
       "desktop_2_0_2_sha256": "43A4D065F0EACD6B6EC434138577BB7AE959F30441667F6987A1C598D611D255",
@@ -58,8 +58,8 @@
     },
     "app/report/report_template.html": {
       "desktop_2_0_2_sha256": "EE17F692ED1B48D4BE03F2A5B20B22940674844F4805C2B84990552A40FD720B",
-      "current_sha256": "2936ADF5EFFFDA7546F57CFFCF4F5A1456F7C47BC046D810F3DDB194C4AC159E",
-      "reason": "Alterações cirúrgicas aprovadas no relatório: um único fluxo de Atualizar relatório para classificação e correção financeira, Subcategoria em filtros/tabelas/exportações, remoção integral das seções descontinuadas, gráfico mensal de largura total com filtros locais, tendência OLS do Realizado e quatro KPIs, cascata por categoria com fechamento exato, Previsto cinza, paleta pastel do Realizado, contraste Light/Dark e contenção responsiva sem estouro horizontal."
+      "current_sha256": "954355BA7620BD2D68AB788476EF6750EAA128773016DDD0AC672F89070DAF28",
+      "reason": "Alterações cirúrgicas aprovadas no relatório: um único fluxo de Atualizar relatório para classificação e correção financeira, Subcategoria em filtros/tabelas/exportações, remoção integral das seções descontinuadas, gráfico mensal de largura total com filtros locais, tendência OLS do Realizado, quatro KPIs e rótulos adaptativos sem colisão, cascata por categoria com fechamento exato e rótulos no mesmo padrão de alto contraste, legenda P/R simplificada, títulos com subtítulos dinâmicos do período, avisos explicados em linguagem leiga com auditoria preservada, Previsto cinza, paleta pastel do Realizado, contraste Light/Dark e contenção responsiva sem estouro horizontal."
     },
     "app/services/report_generator.py": {
       "desktop_2_0_2_sha256": "00FA343E4C3118C4C935763D7B58913CE30FEE310C45504E0FFC7C8313FFA050",

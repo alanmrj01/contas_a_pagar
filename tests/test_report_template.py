@@ -39,7 +39,8 @@ def test_monthly_area_fits_up_to_three_blocks_and_has_stronger_hover():
 
 def test_warnings_are_named_avisos_and_identify_columns():
     assert '<h2>Avisos</h2>' in TEMPLATE
-    assert 'Coluna(s) com informação ausente, inválida ou não classificada' in TEMPLATE
+    assert 'Não conseguimos identificar com segurança o valor informado nesta linha' in TEMPLATE
+    assert '<b>Dados para auditoria:</b>' in TEMPLATE
     assert "fields=['Fluxo JMM','Categoria']" in TEMPLATE
 
 
@@ -202,7 +203,7 @@ def test_category_chart_month_selection_obeys_zero_one_two_and_more_than_two_rul
     assert 'previousMonthKey' not in month_selector
     assert 'id="categoryMonthChip"' in TEMPLATE
     assert 'id="categoryLegend"' in TEMPLATE
-    assert "el('categoryMonthChip').textContent=labels.join(' e ')" in TEMPLATE
+    assert "el('categoryMonthChip').textContent=graphMonthSubtitle(comparisonMonths)" in TEMPLATE
     assert "comparisonMonths.forEach" in TEMPLATE
 
 
@@ -224,7 +225,7 @@ def test_category_month_filter_is_local_and_uses_only_globally_available_months(
     pass_fn = TEMPLATE.split('function pass(x)', 1)[1].split('function group', 1)[0]
     assert 'categoryMonths' not in pass_fn
     assert "state.categoryMonths.length?'Mês local por categoria = '" in TEMPLATE
-    assert "el('categoryMonthChip').textContent=labels.join(' e ')" in TEMPLATE
+    assert "el('categoryMonthChip').textContent=graphMonthSubtitle(comparisonMonths)" in TEMPLATE
 
 
 def test_category_chart_is_horizontal_keeps_every_value_label_and_has_own_series_filter():
@@ -248,7 +249,7 @@ def test_category_chart_uses_exactly_four_fixed_solid_pastel_series_colors_and_p
     assert "info.mark==='P'?{fill:'#aeb8c2',stroke:'#687785'}" in TEMPLATE
     assert 'const CATEGORY_ACTUAL_COLORS=' in TEMPLATE
     assert 'categoryActualColor(info.category)' in TEMPLATE
-    assert "Realizado — '+esc(row.label)" in TEMPLATE
+    assert "el('categoryLegend').innerHTML='<span>P - Previsto</span><span>R - Realizado</span>'" in TEMPLATE
     assert 'monthIndex:index' in TEMPLATE
     assert "categoryBar categoryBar--'+sideClass+' categoryBar--'+info.periodClass" in TEMPLATE
     assert 'class="card cardWide categoryChartCard"' in TEMPLATE
@@ -257,7 +258,7 @@ def test_category_chart_uses_exactly_four_fixed_solid_pastel_series_colors_and_p
     assert '.categoryBarValue{font-size:11.5px!important}' in TEMPLATE
     assert 'def _category_series_colors(item: dict, category: str = ""):' in PDF_SOURCE
     assert 'return HexColor("#AEB8C2"), HexColor("#687785")' in PDF_SOURCE
-    assert 'f"Realizado - {row[\'label\']}"' in PDF_SOURCE
+    assert 'legend = ("P - Previsto", "R - Realizado")' in PDF_SOURCE
 
 
 def test_monthly_comparison_numeric_labels_are_larger_and_not_scaled_horizontally():
@@ -267,6 +268,9 @@ def test_monthly_comparison_numeric_labels_are_larger_and_not_scaled_horizontall
     assert 'text.length*6.8+18' in monthly_fn
     assert 'font_size = 7.2' in PDF_SOURCE
     assert 'label_w = min(82, max(54' in PDF_SOURCE
+    assert 'function chooseMonthlyLabelRect(' in TEMPLATE
+    assert 'monthlyTrendHitsRect(rect,trendPoints,10)' in TEMPLATE
+    assert 'class="monthlyComparisonValueLeader"' in TEMPLATE
 
 
 def test_supplier_period_context_and_waterfall_high_contrast_labels_are_present():
@@ -275,6 +279,10 @@ def test_supplier_period_context_and_waterfall_high_contrast_labels_are_present(
     assert "contribution:(actualBy[label]||0)-(plannedBy[label]||0)" in TEMPLATE
     assert "finalClass=data.variance<0?'waterfallDeficit':'waterfallActual'" in TEMPLATE
     assert 'legendNegative' in TEMPLATE and 'legendPositive' in TEMPLATE
+    waterfall_fn = TEMPLATE.split('function categoryWaterfall(p,r)', 1)[1].split('function buildTimelineFilters', 1)[0]
+    assert 'class="monthlyComparisonValueBg"' in waterfall_fn
+    assert 'class="monthlyComparisonValue"' in waterfall_fn
+    assert '_draw_value_bubble' in PDF_SOURCE
 
 
 def test_monthly_comparison_replaces_waterfall_and_uses_filtered_rows_with_local_filters():
@@ -290,7 +298,7 @@ def test_monthly_comparison_replaces_waterfall_and_uses_filtered_rows_with_local
     assert "if(state.timelineSeries!=='actual')" in TEMPLATE
     assert "if(state.timelineSeries!=='planned')" in TEMPLATE
     assert "<title>'+esc(tooltip)+'</title>" in TEMPLATE
-    assert 'barMarkup+labelMarkup' in TEMPLATE
+    assert 'chooseMonthlyLabelRect' in TEMPLATE
     assert "el('chartCategoryWaterfall').innerHTML=categoryWaterfall(p,r)" in render_fn
     assert '<h2>Previsto x Realizado por categoria — Cascata</h2>' in TEMPLATE
 
@@ -439,6 +447,9 @@ def test_every_graph_has_dynamic_global_and_local_filter_subtitle():
         assert f'id="{element_id}"' not in TEMPLATE
     for element_id in ('categoryMonthChip', 'timelineMonthChip', 'waterfallMonthChip', 'categoryLegend', 'monthlyLegend'):
         assert f'id="{element_id}"' in TEMPLATE
+    assert "return (labels.length===1?'Mês do gráfico: ':'Meses do gráfico: ')+labels.join(' • ')" in TEMPLATE
+    assert '.categoryTitleWrap{display:flex;flex-direction:column;align-items:flex-start' in TEMPLATE
+    assert '_graph_period_subtitle(category_months)' in PDF_SOURCE
     assert 'function globalFilterParts()' in TEMPLATE
     assert 'function currentFilterSummary()' in TEMPLATE
 

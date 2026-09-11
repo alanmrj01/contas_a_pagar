@@ -164,6 +164,25 @@ def _kpi(c: canvas.Canvas, x, y, w, h, label, value, note):
     _text_fit(c, x + 10, y + 9, note, max_width=w - 20, start_size=6.8, min_size=5.5, color=MUTED)
 
 
+def _draw_value_bubble(c: canvas.Canvas, cx: float, by: float, label: str, x_min: float, x_max: float, leader_from: tuple[float, float] | None = None):
+    font_size = 7.2
+    label_w = min(82, max(54, pdfmetrics.stringWidth(label, "Helvetica-Bold", font_size) + 9))
+    bx = max(x_min, min(x_max - label_w, cx - label_w / 2))
+    if leader_from is not None:
+        target_y = by if by > leader_from[1] else by + 14
+        c.setStrokeColor(HexColor("#69818F"))
+        c.setLineWidth(.55)
+        c.line(leader_from[0], leader_from[1], cx, target_y)
+    c.setFillColor(white)
+    c.setStrokeColor(HexColor("#69818F"))
+    c.setLineWidth(.45)
+    c.roundRect(bx, by, label_w, 14, 3, fill=1, stroke=1)
+    c.setFillColor(TEXT)
+    c.setFont("Helvetica-Bold", font_size)
+    c.drawCentredString(bx + label_w / 2, by + 4.1, label)
+    return bx, by, label_w, 14
+
+
 def _category_month_rows(previsto, realizado):
     months = sorted({
         str(item.get("date"))[:7]
@@ -270,23 +289,11 @@ def _category_chart(c, x, y, w, h, rows):
         c.setLineWidth(.35)
         c.line(x + 1, row_top - row_h + 2, x + w - 1, row_top - row_h + 2)
 
-    legend = [("Previsto", HexColor("#AEB8C2"), HexColor("#687785"))]
-    legend.extend(
-        (f"Realizado - {row['label']}", _supplier_color(row["label"]), _mix_color(_supplier_color(row["label"]), HexColor("#17384D"), .42))
-        for row in rows
-    )
-    columns = min(4, max(1, len(legend)))
-    slot = w / columns
-    for index, (label, fill, stroke) in enumerate(legend):
-        column = index % columns
-        line = index // columns
-        lx = x + column * slot
-        ly = y + 27 - line * 12
-        c.setFillColor(fill)
-        c.setStrokeColor(stroke)
-        c.setLineWidth(.7)
-        c.roundRect(lx, ly, 10, 7, 1.5, fill=1, stroke=1)
-        _text_fit(c, lx + 13, ly + .5, label, max_width=slot - 16, start_size=5.5, min_size=4.6, color=MUTED, bold=True)
+    legend = ("P - Previsto", "R - Realizado")
+    slot = min(110, w / len(legend))
+    start_x = x + (w - slot * len(legend)) / 2
+    for index, label in enumerate(legend):
+        _text_fit(c, start_x + index * slot, y + 25, label, max_width=slot - 8, start_size=6.1, min_size=5.2, color=MUTED, bold=True)
 
 
 def _monthly_comparison_rows(previsto, realizado):
@@ -314,7 +321,7 @@ def _monthly_comparison_chart(c, x, y, w, h, rows):
     domain_max = max(0.0, *values)
     span = domain_max - domain_min or 1.0
     left, right = x + 46, x + w - 8
-    bottom, top = y + 46, y + h - 24
+    bottom, top = y + 46, y + h - 48
     plot_w, plot_h = right - left, top - bottom
 
     def yy(value: float) -> float:
@@ -331,9 +338,14 @@ def _monthly_comparison_chart(c, x, y, w, h, rows):
 
     slot = plot_w / len(rows)
     bar_w = min(18.0, max(5.0, slot * .25))
+    points = [
+        (left + slot * (index + .5), yy(value))
+        for index, value in enumerate(trend)
+    ]
+    bars = []
     for index, row in enumerate(rows):
         center = left + slot * (index + .5)
-        value_labels = []
+        group_bars = []
         for series_index, (key, fill, stroke) in enumerate((
             ("planned", HexColor("#AEB8C2"), HexColor("#687785")),
             ("actual", HexColor("#E6A58F"), HexColor("#8D4E3B")),
@@ -347,32 +359,93 @@ def _monthly_comparison_chart(c, x, y, w, h, rows):
             c.setStrokeColor(stroke)
             c.setLineWidth(1.2 if series_index == 0 else .7)
             c.roundRect(bar_x, bar_y, bar_w, bar_h, 2, fill=1, stroke=1)
-            label = brl(value)
-            font_size = 7.2
-            label_w = min(82, max(54, pdfmetrics.stringWidth(label, "Helvetica-Bold", font_size) + 9))
-            preferred = bar_y + bar_h + 5 + series_index * 17 if value >= 0 else bar_y - 16 - series_index * 17
-            label_y = max(y + 2, min(top + 7, preferred))
-            value_labels.append((label, label_w, label_y, stroke, font_size))
-        # As duas colunas precisam existir antes dos balões; assim nenhuma
-        # coluna posterior encobre o rótulo da série anterior.
-        for label, label_w, label_y, stroke, font_size in value_labels:
-            c.setFillColor(white)
-            c.setStrokeColor(stroke)
-            c.setLineWidth(.45)
-            c.roundRect(center - label_w / 2, label_y, label_w, 14, 3, fill=1, stroke=1)
-            c.setFillColor(TEXT)
-            c.setFont("Helvetica-Bold", font_size)
-            c.drawCentredString(center, label_y + 4.1, label)
+            group_bars.append({
+                "center": center,
+                "bar_center": bar_x + bar_w / 2,
+                "bar_x": bar_x,
+                "bar_y": bar_y,
+                "bar_h": bar_h,
+                "value": value,
+                "label": brl(value),
+            })
+        positive_top = max([item["bar_y"] + item["bar_h"] for item in group_bars if item["value"] >= 0] or [zero_y])
+        negative_bottom = min([item["bar_y"] for item in group_bars if item["value"] < 0] or [zero_y])
+        for item in group_bars:
+            item["preferred"] = positive_top + 8 if item["value"] >= 0 else negative_bottom - 22
+            bars.append(item)
         month = str(row["month"])
         label = f"{MONTHS_PT[int(month[5:7]) - 1]}/{month[2:4]}"
         _text(c, center - 11, y + 27, label, 6.2, MUTED, True)
 
+    def overlaps(first, second, margin=0.0):
+        return (
+            first[0] < second[0] + second[2] + margin
+            and first[0] + first[2] + margin > second[0]
+            and first[1] < second[1] + second[3] + margin
+            and first[1] + first[3] + margin > second[1]
+        )
+
+    def trend_hits(rect, margin=6.0):
+        rect_left = rect[0] - margin
+        rect_right = rect[0] + rect[2] + margin
+        rect_bottom = rect[1] - margin
+        rect_top = rect[1] + rect[3] + margin
+        if any(rect_left <= point_x <= rect_right and rect_bottom <= point_y <= rect_top for point_x, point_y in points):
+            return True
+        for first, last in zip(points, points[1:]):
+            segment_left = max(rect_left, min(first[0], last[0]))
+            segment_right = min(rect_right, max(first[0], last[0]))
+            if segment_left > segment_right:
+                continue
+            if first[0] == last[0]:
+                if rect_left <= first[0] <= rect_right and max(min(first[1], last[1]), rect_bottom) <= min(max(first[1], last[1]), rect_top):
+                    return True
+                continue
+            first_y = first[1] + (last[1] - first[1]) * (segment_left - first[0]) / (last[0] - first[0])
+            last_y = first[1] + (last[1] - first[1]) * (segment_right - first[0]) / (last[0] - first[0])
+            if max(min(first_y, last_y), rect_bottom) <= min(max(first_y, last_y), rect_top):
+                return True
+        return False
+
+    bar_rects = [(item["bar_x"], item["bar_y"], bar_w, item["bar_h"]) for item in bars]
+    placed = []
+    min_label_y, max_label_y = y + 32, y + h - 14
+    for item in bars:
+        label_w = min(82, max(54, pdfmetrics.stringWidth(item["label"], "Helvetica-Bold", 7.2) + 9))
+        direction = 1 if item["value"] >= 0 else -1
+        candidates = [item["preferred"]]
+        candidates.extend(item["preferred"] + direction * step * 18 for step in range(1, 13))
+        candidates.extend(item["preferred"] - direction * step * 18 for step in range(1, 13))
+        candidates.extend(min_label_y + step * 17 for step in range(max(1, int((max_label_y - min_label_y) / 17) + 1)))
+        chosen = None
+        for candidate in candidates:
+            if candidate < min_label_y or candidate > max_label_y:
+                continue
+            rect = (item["center"] - label_w / 2, candidate, label_w, 14)
+            if any(overlaps(rect, other, 3) for other in placed):
+                continue
+            if any(overlaps(rect, bar, 3) for bar in bar_rects):
+                continue
+            if trend_hits(rect):
+                continue
+            chosen = rect
+            break
+        if chosen is None:
+            chosen = (item["center"] - label_w / 2, max(min_label_y, min(max_label_y, item["preferred"])), label_w, 14)
+        placed.append(chosen)
+        bar_edge = item["bar_y"] + item["bar_h"] if item["value"] >= 0 else item["bar_y"]
+        _draw_value_bubble(
+            c,
+            item["center"],
+            chosen[1],
+            item["label"],
+            x,
+            x + w,
+            leader_from=(item["bar_center"], bar_edge),
+        )
+
     c.setStrokeColor(HexColor("#2F88B8"))
     c.setLineWidth(1.8)
-    points = [
-        (left + slot * (index + .5), yy(value))
-        for index, value in enumerate(trend)
-    ]
     for index in range(1, len(points)):
         c.line(points[index - 1][0], points[index - 1][1], points[index][0], points[index][1])
     for point_x, point_y in points:
@@ -411,14 +484,15 @@ def _monthly_local_kpis(c, x, y, w, h, rows):
         _kpi(c, x, card_y, w, card_h, label, value, "")
 
 
+def _graph_period_subtitle(labels: list[str]) -> str:
+    if not labels:
+        return "Mês do gráfico: sem mês válido"
+    prefix = "Mês do gráfico: " if len(labels) == 1 else "Meses do gráfico: "
+    return prefix + " • ".join(labels)
+
+
 def _period_chip(c, x, y, text):
-    label = str(text or "Sem mês válido")
-    width = min(245, max(70, pdfmetrics.stringWidth(label, "Helvetica-Bold", 6.3) + 18))
-    c.setFillColor(white)
-    c.setStrokeColor(HexColor("#9FB1BD"))
-    c.setLineWidth(.6)
-    c.roundRect(x, y, width, 15, 7, fill=1, stroke=1)
-    _text_fit(c, x + 9, y + 4.3, label, max_width=width - 18, start_size=6.3, min_size=5.2, color=MUTED, bold=True)
+    _text_fit(c, x, y, str(text), max_width=A4[0] - x - 36, start_size=7.1, min_size=5.8, color=MUTED, bold=True)
 
 
 def _waterfall(c, x, y, w, h, rows, start):
@@ -452,19 +526,6 @@ def _waterfall(c, x, y, w, h, rows, start):
     def yy(value: float) -> float:
         return bottom + ph * (value - domain_min) / span
 
-    def value_bubble(cx: float, preferred_y: float, label: str, stagger: bool = False) -> None:
-        font_size = 5.7
-        bubble_w = min(78, max(49, pdfmetrics.stringWidth(label, "Helvetica-Bold", font_size) + 9))
-        bx = max(x + 1, min(x + w - bubble_w - 1, cx - bubble_w / 2))
-        by = max(bottom + 1, min(top - 12, preferred_y + (8 if stagger else 0)))
-        c.setFillColor(white)
-        c.setStrokeColor(HexColor("#69818F"))
-        c.setLineWidth(.55)
-        c.roundRect(bx, by, bubble_w, 11, 3, fill=1, stroke=1)
-        c.setFont("Helvetica-Bold", font_size)
-        c.setFillColor(TEXT)
-        c.drawCentredString(bx + bubble_w / 2, by + 3.1, label)
-
     for i in range(5):
         value = domain_min + span * i / 4
         y_tick = yy(value)
@@ -481,7 +542,8 @@ def _waterfall(c, x, y, w, h, rows, start):
     c.setFillColor(HexColor("#AEB8C2"))
     c.setStrokeColor(HexColor("#687785"))
     c.roundRect(start_x, min(zero_y, start_y), bw, max(3, abs(start_y - zero_y)), 2.5, fill=1, stroke=0)
-    value_bubble(start_x + bw / 2, max(zero_y, start_y) + 4, brl(float(start)))
+    start_edge = max(zero_y, start_y)
+    _draw_value_bubble(c, start_x + bw / 2, min(top - 14, start_edge + 5), brl(float(start)), x + 1, x + w - 1, leader_from=(start_x + bw / 2, start_edge))
     _text(c, start_x, y + 13, "Previsto", 5.8, MUTED, True)
 
     prev = float(start)
@@ -497,8 +559,10 @@ def _waterfall(c, x, y, w, h, rows, start):
         bar_color = HexColor("#78B7DB") if value >= 0 else HexColor("#DF8588")
         c.setFillColor(bar_color)
         c.roundRect(x0, min(y1, y2), bw, max(3, abs(y2 - y1)), 2.5, fill=1, stroke=0)
-        value_y = (max(y1, y2) + 4 + (8 if i % 2 else 0)) if value >= 0 else (min(y1, y2) - 14 - (8 if i % 2 else 0))
-        value_bubble(x0 + bw / 2, value_y, brl(value))
+        bar_edge = max(y1, y2) if value >= 0 else min(y1, y2)
+        value_y = (bar_edge + 5 + (18 if i % 2 else 0)) if value >= 0 else (bar_edge - 19 - (18 if i % 2 else 0))
+        value_y = max(bottom + 1, min(top - 14, value_y))
+        _draw_value_bubble(c, x0 + bw / 2, value_y, brl(value), x + 1, x + w - 1, leader_from=(x0 + bw / 2, bar_edge))
         for j, label in enumerate(_label_lines(row["label"], 10, 2)):
             c.setFont("Helvetica-Bold", 5.1)
             c.setFillColor(MUTED)
@@ -509,7 +573,9 @@ def _waterfall(c, x, y, w, h, rows, start):
     final_y = yy(actual)
     c.setFillColor(HexColor("#DF8588") if actual - float(start) < 0 else HexColor("#78B7DB"))
     c.roundRect(final_x, min(zero_y, final_y), bw, max(3, abs(final_y - zero_y)), 2.5, fill=1, stroke=0)
-    value_bubble(final_x + bw / 2, max(zero_y, final_y) + 4, brl(float(actual)), stagger=bool(len(rows) % 2))
+    final_edge = max(zero_y, final_y)
+    final_value_y = min(top - 14, final_edge + 5 + (18 if len(rows) % 2 else 0))
+    _draw_value_bubble(c, final_x + bw / 2, final_value_y, brl(float(actual)), x + 1, x + w - 1, leader_from=(final_x + bw / 2, final_edge))
     c.setFont("Helvetica-Bold", 5.8)
     c.setFillColor(MUTED)
     c.drawCentredString(final_x + bw / 2, y + 13, "Realizado")
@@ -674,8 +740,8 @@ def generate_pdf(result: ReconcileResult, destination: str | Path) -> Path:
         page += 1
         w, h = _new_page(c, "Gráficos financeiros", result.period_label, page)
         suffix = f" ({chunk_index + 1}/{len(category_chunks)})" if len(category_chunks) > 1 else ""
-        _text(c, 36, h - 98, f"1. Previsto x Realizado por categoria{suffix}", 10, BLUE, True)
-        _period_chip(c, 315, h - 105, " e ".join(category_months) if category_months else "Sem mês válido")
+        _text(c, 36, h - 98, f"1. Previsto x Realizado por categoria{suffix}", 11.5, BLUE, True)
+        _period_chip(c, 36, h - 114, _graph_period_subtitle(category_months))
         _category_chart(c, 18, 48, w - 36, h - 170, chunk)
         c.showPage()
 
@@ -685,12 +751,12 @@ def generate_pdf(result: ReconcileResult, destination: str | Path) -> Path:
         page += 1
         w, h = _new_page(c, "Previsto x Realizado por mês", result.period_label, page)
         suffix = f" ({chunk_index}/{len(monthly_chunks)})" if len(monthly_chunks) > 1 else ""
-        _text(c, 36, h - 98, f"2. Previsto x Realizado por mês{suffix}", 10, BLUE, True)
+        _text(c, 36, h - 98, f"2. Previsto x Realizado por mês{suffix}", 11.5, BLUE, True)
         shown_months = [
             f"{MONTHS_PT[int(str(row['month'])[5:7]) - 1]}/{str(row['month'])[2:4]}"
             for row in chunk
         ]
-        _period_chip(c, 315, h - 105, ", ".join(shown_months) if shown_months else "Sem mês válido")
+        _period_chip(c, 36, h - 114, _graph_period_subtitle(shown_months))
         chart_x, chart_y, chart_h = 30, 92, h - 225
         kpi_w, gap = 132, 12
         chart_w = w - 60 - kpi_w - gap
@@ -705,12 +771,12 @@ def generate_pdf(result: ReconcileResult, destination: str | Path) -> Path:
     ]
     page += 1
     w, h = _new_page(c, "Previsto x Realizado por categoria - Cascata", result.period_label, page)
-    _text(c, 36, h - 98, "3. Previsto x Realizado por categoria - Cascata", 10, BLUE, True)
+    _text(c, 36, h - 98, "3. Previsto x Realizado por categoria - Cascata", 11.5, BLUE, True)
     waterfall_months = [
         f"{MONTHS_PT[int(str(row['month'])[5:7]) - 1]}/{str(row['month'])[2:4]}"
         for row in monthly_comparison
     ]
-    _period_chip(c, 315, h - 105, ", ".join(waterfall_months) if waterfall_months else "Sem mês válido")
+    _period_chip(c, 36, h - 114, _graph_period_subtitle(waterfall_months))
     _waterfall(c, 24, 68, w - 48, h - 205, waterfall_rows, float(waterfall_data["planned"]))
     c.showPage()
 
