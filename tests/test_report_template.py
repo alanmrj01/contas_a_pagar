@@ -265,13 +265,14 @@ def test_monthly_comparison_numeric_labels_are_larger_and_not_scaled_horizontall
     assert '.monthlyComparisonValue{fill:#102536;font-size:11.25px;font-weight:900;text-rendering:geometricPrecision}' in TEMPLATE
     monthly_fn = TEMPLATE.split('function monthlyComparisonChart(p,r)', 1)[1].split('function buildTimelineFilters', 1)[0]
     assert 'scaleX' not in monthly_fn
-    assert 'text.length*6.8+18' in monthly_fn
+    assert 'text.length*6.45+16' in monthly_fn
+    assert 'class="monthlyComparisonValueLeader"' not in monthly_fn
+    assert 'groupTop=Math.min(...siblings.map(peer=>peer.barY))' in monthly_fn
+    assert 'groupTop-44+item.seriesIndex*22' in monthly_fn
+    assert 'monthlyComparisonTrendHalo' in monthly_fn
+    assert 'gridSvg+barSvg+trendSvg+labelSvg+monthSvg' in monthly_fn
     assert 'font_size = 7.2' in PDF_SOURCE
     assert 'label_w = min(82, max(54' in PDF_SOURCE
-    assert 'function chooseMonthlyLabelRect(' in TEMPLATE
-    assert 'monthlyTrendHitsRect(rect,trendPoints,10)' in TEMPLATE
-    assert 'class="monthlyComparisonValueLeader"' in TEMPLATE
-
 
 def test_supplier_period_context_and_waterfall_high_contrast_labels_are_present():
     assert 'id="waterfallMonthChip"' in TEMPLATE
