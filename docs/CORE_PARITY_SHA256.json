@@ -58,8 +58,8 @@
     },
     "app/report/report_template.html": {
       "desktop_2_0_2_sha256": "EE17F692ED1B48D4BE03F2A5B20B22940674844F4805C2B84990552A40FD720B",
-      "current_sha256": "954355BA7620BD2D68AB788476EF6750EAA128773016DDD0AC672F89070DAF28",
-      "reason": "Alterações cirúrgicas aprovadas no relatório: um único fluxo de Atualizar relatório para classificação e correção financeira, Subcategoria em filtros/tabelas/exportações, remoção integral das seções descontinuadas, gráfico mensal de largura total com filtros locais, tendência OLS do Realizado, quatro KPIs e rótulos adaptativos sem colisão, cascata por categoria com fechamento exato e rótulos no mesmo padrão de alto contraste, legenda P/R simplificada, títulos com subtítulos dinâmicos do período, avisos explicados em linguagem leiga com auditoria preservada, Previsto cinza, paleta pastel do Realizado, contraste Light/Dark e contenção responsiva sem estouro horizontal."
+      "current_sha256": "EA8901188D96207B9A9216EDF40E6B884561B4BE2067C6F9B0751AD17EFF3B0D",
+      "reason": "Alterações cirúrgicas aprovadas no relatório: um único fluxo de Atualizar relatório para classificação e correção financeira, Subcategoria em filtros/tabelas/exportações, remoção integral das seções descontinuadas, gráfico mensal de largura total com filtros locais, tendência OLS do Realizado, quatro KPIs e rótulos compactos sem linhas-guia, tendência reforçada visualmente e mantida abaixo dos rótulos, cascata por categoria com fechamento exato e rótulos no mesmo padrão de alto contraste, legenda P/R simplificada, títulos com subtítulos dinâmicos do período, avisos explicados em linguagem leiga com auditoria preservada, Previsto cinza, paleta pastel do Realizado, contraste Light/Dark e contenção responsiva sem estouro horizontal."
     },
     "app/services/report_generator.py": {
       "desktop_2_0_2_sha256": "00FA343E4C3118C4C935763D7B58913CE30FEE310C45504E0FFC7C8313FFA050",
